@@ -36,11 +36,11 @@
            (pushnew `(with-test (:name (:standard-character :read-write-equivalency ,xf))
                        (let ((standard-characters "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!$\"'(),_-./:;?+<=>#%&*@[\\]{|}`^~"))
                          (with-open-file (s *test-path* :direction :output
-                                            :if-exists :supersede :external-format ,xf)
+                                            :if-exists :supersede :external-format ',xf)
                            (loop for character across standard-characters
                                  do (write-char character s)))
                          (with-open-file (s *test-path* :direction :input
-                                            :external-format ,xf)
+                                            :external-format ',xf)
                            (loop for character across standard-characters
                                  do (let ((got (read-char s)))
                                       (unless (eql character got)
@@ -1014,33 +1014,30 @@
       (assert (string= " ???? " (read-line s))))))
 
 (with-test (:name :invalid-external-format :fails-on :win32)
-  (labels ((test-error (e)
-             (assert (typep e 'error))
-             (unless (equal "Undefined external-format: :BAD-FORMAT"
-                            (princ-to-string e))
-               (error "Bad error:~%  ~A" e)))
-           (test (direction)
-             (test-error
-              (handler-case
-                  (open "/dev/null" :direction direction :external-format :bad-format
-                        :if-exists :overwrite)
-                (error (e) e)))))
-    (test :input)
-    (test :output)
-    (test :io)
-    (test-error
-     (handler-case
-         (run-program "sh" '() :input :stream :external-format :bad-format)
-       (error (e) e)))
-    (test-error
-     (handler-case
-         (string-to-octets "foobar" :external-format :bad-format)
-       (error (e) e)))
-    (test-error
-     (let ((octets (string-to-octets "foobar" :external-format :latin1)))
-       (handler-case
-           (octets-to-string octets :external-format :bad-format)
-         (error (e) e))))))
+  (labels ((test (fun expected)
+             (handler-case
+                 (funcall fun)
+               (error (error)
+                 (assert (equal (princ-to-string error) expected)))))
+           (open-with-format (direction format)
+             (open "/dev/null" :direction direction :external-format format
+                               :if-exists :overwrite)))
+    (loop for (format expected)
+          in '((:bad "Undefined character coding: :BAD")
+               ((:ascii :newline-coding :bad) "Undefined newline coding: :BAD"))
+          do (test (lambda () (open-with-format :input format)) expected)
+             (test (lambda () (open-with-format :output format)) expected)
+             (test (lambda () (open-with-format :io format)) expected)
+             (test (lambda ()
+                     (run-program "sh" '() :input :stream :external-format format))
+                   expected)
+             (test (lambda ()
+                     (string-to-octets "foobar" :external-format format))
+                   expected)
+             (test (lambda ()
+                     (let ((octets (string-to-octets "foobar" :external-format :latin1)))
+                       (octets-to-string octets :external-format format)))
+                   expected))))
 
 (with-test (:name :lp713063)
   (with-open-file (f *test-path*

@@ -1,4 +1,4 @@
-;;;; External formats
+;;;; External formats: character and newline coding
 
 ;;;; This software is part of the SBCL system. See the README file for
 ;;;; more information.
@@ -581,6 +581,108 @@ EXPERIMENTAL: Interface subject to change."
          :string-to-octets-fun (lambda (&rest rest)
                                  (declare (dynamic-extent rest))
                                  (apply ',string-to-octets-symbol rest))))))
+
+;;; NEWLINE-CODING
+
+(defstruct (newline-coding
+            (:constructor %make-newline-coding)
+            (:conc-name nc-)
+            (:copier nil))
+  ;; All the names that can refer to this newline coding.  The first
+  ;; one is the canonical name.
+  (names             (missing-arg) :type list               :read-only t)
+  ;;
+  (newline-sequence  (missing-arg) :type string             :read-only t)
+  ;;
+  (read-newline-fun  nil           :type (or null function) :read-only t)
+  (write-newline-fun nil           :type (or null function) :read-only t))
+(declaim (freeze-type newline-coding))
+
+(declaim (ftype (sfunction (newline-coding) symbol) nc-name))
+(defun nc-name (newline-coding)
+  (first (nc-names newline-coding)))
+
+(defmethod print-object ((object newline-coding) stream)
+  (print-unreadable-object (object stream :type t :identity t)
+    (princ (nc-name object) stream)))
+
+(defun nc-single-character-p (newline-coding)
+  (= (length (nc-newline-sequence newline-coding)) 1))
+
+(defun nc-identity-p (newline-coding)
+  (string= (string #\Newline) (nc-newline-sequence newline-coding)))
+
+;;; All available newline codings. The table maps from newline coding
+;;; names to NEWLINE-CODING instances.
+(declaim (type hash-table **newline-codings**))
+(define-load-time-global **newline-codings** (make-hash-table :test #'eq))
+
+;; TODO should this be thread-safe?
+(declaim (ftype (sfunction (keyword &key (:if-does-not-exist error-policy))
+                           (or null newline-coding))
+                find-newline-coding))
+(defun find-newline-coding (designator &key if-does-not-exist)
+  "Return the newline coding designated by DESIGNATOR.
+
+IF-DOES-NOT-EXIST controls the behavior in case the requested newline
+coding cannot be found:
+
+  A function
+
+    If DESIGNATOR does not designate a newline coding, call
+    IF-DOES-NOT-EXIST with an error condition as the sole argument.
+
+  Any other value
+
+    Return IF-DOES-NOT-EXIST if DESIGNATOR does not designate a
+    newline coding.
+
+EXPERIMENTAL: Interface subject to change."
+  (let ((result (gethash designator **newline-codings**)))
+    (cond (result)
+          ((functionp if-does-not-exist)
+           (funcall if-does-not-exist
+                    (make-condition 'simple-error
+                                    :format-control "~@<Undefined newline-coding: ~S~@:>"
+                                    :format-arguments (list designator))))
+          (t
+           if-does-not-exist))))
+
+(declaim (ftype (sfunction (newline-coding keyword &key (:if-does-not-exist t))
+                           newline-coding)
+                (setf find-newline-coding)))
+(defun (setf find-newline-coding) (new-value designator &key if-does-not-exist)
+  "Install NEW-VALUE as the newline coding for the name DESIGNATOR.
+
+IF-DOES-NOT-EXIST is accepted for parity with FIND-NEWLINE-CODING and
+ignored.
+
+EXPERIMENTAL: Interface subject to change."
+  (declare (ignore if-does-not-exist))
+  (setf (gethash designator **newline-codings**) new-value))
+
+(defun register-newline-coding (names newline-coding)
+  (dolist (name names)
+    (setf (find-newline-coding name) newline-coding))
+  newline-coding)
+
+;; TODO document
+(defmacro define-newline-coding (name-or-names
+                                 &key
+                                 (newline-sequence (missing-arg))
+                                 (read-newline-fun (missing-arg))
+                                 (write-newline-fun (missing-arg)))
+  (let ((names (with-current-source-form (name-or-names)
+                 (ensure-list-of-names "newline coding" name-or-names))))
+    `(let ((names ',names))
+       (register-newline-coding
+        names (%make-newline-coding
+               :names             names
+               :newline-sequence  ,newline-sequence
+               :read-newline-fun  ,read-newline-fun
+               :write-newline-fun ,write-newline-fun))
+       (first names))))
+
 
 ;;; EXTERNAL-FORMAT
 
@@ -589,6 +691,7 @@ EXPERIMENTAL: Interface subject to change."
             (:conc-name ef-)
             (:copier %copy-external-format))
   (character-coding             (missing-arg) :type character-coding   :read-only t)
+  (newline-coding               (missing-arg) :type newline-coding     :read-only t)
   ;; Character sizes.
   (bytes-for-char-fun           (missing-arg) :type (or null function) :read-only t)
   ;; Reading characters from streams.
@@ -617,40 +720,163 @@ EXPERIMENTAL: Interface subject to change."
             (cc-name (ef-character-coding object))
             (nc-name (ef-newline-coding object)))))
 
-(defun make-external-format (character-coding)
-  (%make-external-format
-   :character-coding character-coding
-   ;; Size
-   :bytes-for-char-fun
-   (cc-bytes-for-char-fun character-coding)
-   ;; Reading characters from streams
-   :read-char-fun
-   (cc-read-char-fun character-coding)
-   :read-n-chars-fun
-   (cc-read-n-chars-fun character-coding)
-   ;; Writing characters to streams
-   :write-n-bytes-fun
-   (cc-write-n-bytes-fun character-coding)
-   :write-char-none-buffered-fun
-   (cc-write-char-none-buffered-fun character-coding)
-   :write-char-line-buffered-fun
-   (cc-write-char-line-buffered-fun character-coding)
-   :write-char-full-buffered-fun
-   (cc-write-char-full-buffered-fun character-coding)
-   ;; Conversion between strings and octet-vectors
-   :octets-to-string-fun (cc-octets-to-string-fun character-coding)
-   :string-to-octets-fun (cc-string-to-octets-fun character-coding)
-   ;;
-   :read-c-string-fun (cc-read-c-string-fun character-coding)
-   :write-c-string-fun (cc-write-c-string-fun character-coding)))
+(defun make-external-format (character-coding newline-coding)
+  (flet ((maybe-wrap-bytes-for-char-fun (fun)
+           (declare (type function fun))
+           (let ((length (length (nc-newline-sequence newline-coding))))
+             (cond ((= length 1)
+                    fun)
+                   (fun
+                    (lambda (char)
+                      (if (eql char #\Newline)
+                          length
+                          (funcall fun char))))
+                   (t
+                    (lambda (char)
+                      (if (eql char #\Newline)
+                          length
+                          1))))))
+
+         (maybe-wrap-read-char-fun (fun)
+           (declare (type function fun))
+           (let ((read-newline-fun (nc-read-newline-fun newline-coding)))
+             (if read-newline-fun
+                 (lambda (stream eof-error eof-value) ; TODO types
+                   (ecase (funcall read-newline-fun stream eof-error)
+                     ((t) #\Newline)
+                     (:eof eof-value)
+                     (:mismatch (funcall fun stream eof-error eof-value))))
+                 fun)))
+
+         (maybe-wrap-read-n-chars-fun (fun)
+           (declare (type function fun))
+           (let ((newline-sequence (nc-newline-sequence newline-coding)))
+             (cond
+               ((nc-identity-p newline-coding)
+                fun)
+               ((nc-single-character-p newline-coding)
+                (let ((newline-character (aref newline-sequence 0)))
+                  (lambda (stream buffer start requested eof-error-p)
+                    (declare (type string buffer))
+                    (let ((count (funcall fun stream buffer start requested eof-error-p)))
+                      (nsubstitute #\Newline newline-character buffer
+                                   :start start :end (+ start count))
+                      count))))
+               (t
+                (let ((newline-sequence (coerce newline-sequence 'simple-base-string))) ; TODO necessary?
+                  (lambda (stream buffer start requested eof-error-p)
+                    (declare (type string buffer))
+                    (let* ((count (funcall fun stream buffer start requested eof-error-p))
+                           (end (+ start count)))
+                      (declare (type index count))
+                      (loop for previous = start then index
+                            for index = (search newline-sequence buffer
+                                                :start2 previous :end2 end)
+                            while index
+                            do (setf (aref buffer index) #\Newline
+                                     (subseq buffer (+ index 1) (- end 1))
+                                     (subseq buffer (+ index 2) end))
+                               (incf index)
+                               (decf count))
+                      count)))))))
+
+         (maybe-wrap-write-n-bytes-fun (fun)
+           (declare (type function fun))
+           (cond
+             ((nc-identity-p newline-coding)
+              fun)
+             ((nc-single-character-p newline-coding)
+              (let* ((newline-sequence (nc-newline-sequence newline-coding))
+                     (newline-character (aref newline-sequence 0)))
+                (lambda (stream buffer flush-p start end)
+                  (declare (type string buffer))
+                  (let ((buffer (substitute newline-character #\Newline buffer
+                                            :start start :end end)))
+                    (funcall fun stream buffer flush-p 0 (- end start))))))
+             (t
+              (let* ((newline-sequence (nc-newline-sequence newline-coding))
+                     (newline-sequence-length (length newline-sequence)))
+                (lambda (stream buffer flush-p start end)
+                  (let ((first-newline (position #\Newline buffer
+                                                 :start start :end end)))
+                    (if first-newline
+                        (let* ((newline-count (1+ (count #\Newline buffer
+                                                         :start (1+ first-newline)
+                                                         :end end)))
+                               (new-length (+ (- end start newline-count)
+                                              (* newline-sequence-length newline-count)))
+                               (new-buffer (make-vector-like buffer new-length)))
+                          (loop for previous = start then (1+ index)
+                                for index = (position #\Newline buffer
+                                                      :start previous :end end)
+                                for previous* = 0 then index*
+                                for index* = (when index
+                                               (+ previous* (- index previous)))
+                                while index
+                                do (setf (subseq new-buffer previous* index*)
+                                         (subseq buffer previous index)
+                                         (subseq new-buffer index* (incf index* newline-sequence-length))
+                                         newline-sequence)
+                                finally (unless (eql previous end)
+                                          (setf (subseq new-buffer previous*)
+                                                (subseq buffer previous))))
+                          (funcall fun stream new-buffer flush-p 0 new-length))
+                        (funcall fun stream buffer flush-p start end))))))))
+
+         (maybe-wrap-write-char-fun (fun)
+           (declare (type function fun))
+           (let ((write-newline-fun (nc-write-newline-fun newline-coding)))
+             (if t ;; FIXME should only happen for non-NIL write-newline-fun, but
+                   ;; WRITE-NEWLINE-FUN resets the stream column so we can't bypass it
+                 (lambda (stream char)
+                   (declare (type stream stream)
+                            (type character char))
+                   (if (char= char #\Newline)
+                       (funcall write-newline-fun stream)
+                       (funcall fun stream char)))
+                 fun))))
+    (%make-external-format
+     :character-coding character-coding
+     :newline-coding   newline-coding
+     ;; Size
+     :bytes-for-char-fun
+     (maybe-wrap-bytes-for-char-fun
+      (cc-bytes-for-char-fun character-coding))
+     ;; Reading characters from streams
+     :read-char-fun
+     (maybe-wrap-read-char-fun
+      (cc-read-char-fun character-coding))
+     :read-n-chars-fun
+     (maybe-wrap-read-n-chars-fun
+      (cc-read-n-chars-fun character-coding))
+     ;; Writing characters to streams
+     :write-n-bytes-fun
+     (maybe-wrap-write-n-bytes-fun
+      (cc-write-n-bytes-fun character-coding))
+     :write-char-none-buffered-fun
+     (maybe-wrap-write-char-fun
+      (cc-write-char-none-buffered-fun character-coding))
+     :write-char-line-buffered-fun
+     (maybe-wrap-write-char-fun
+      (cc-write-char-line-buffered-fun character-coding))
+     :write-char-full-buffered-fun
+     (maybe-wrap-write-char-fun
+      (cc-write-char-full-buffered-fun character-coding))
+     ;; Conversion between strings and octet-vectors
+     :octets-to-string-fun (cc-octets-to-string-fun character-coding)
+     :string-to-octets-fun (cc-string-to-octets-fun character-coding)
+     ;;
+     :read-c-string-fun (cc-read-c-string-fun character-coding)
+     :write-c-string-fun (cc-write-c-string-fun character-coding))))
 
 ;; TODO add replacements in external format wrappers
 (defun make-external-format/maybe-add-replacements
-    (character-coding replacement)
+    (character-coding newline-coding replacement)
   (make-external-format
    (if replacement
        (add-replacements-to-character-coding character-coding replacement)
-       character-coding)))
+       character-coding)
+   newline-coding))
 
 ;; TODO get rid of this?
 (macrolet ((frob (accessor)
@@ -698,25 +924,26 @@ EXPERIMENTAL: Interface subject to change."
     (let ((external-format (find-external-format external-format)))
       (funcall (ef-read-c-string-fun external-format) sap element-type))))
 
-(defun wrap-external-format-functions (external-format function)
-  (let ((result (%copy-external-format external-format)))
+#+TODO-unused? (defun wrap-external-format-functions (external-format function)
+  (declare (ignore function))
+  (let ((result (%copy-character-coding external-format)))
     (macrolet ((frob (accessor)
                  `(setf (,accessor result) (funcall function (,accessor result)))))
-      (frob ef-read-n-chars-fun)
-      (frob ef-read-char-fun)
-      (frob ef-write-n-bytes-fun)
-      (frob ef-write-char-none-buffered-fun)
-      (frob ef-write-char-line-buffered-fun)
-      (frob ef-write-char-full-buffered-fun)
-      (frob ef-resync-fun)
-      (frob ef-bytes-for-char-fun)
-      (frob ef-read-c-string-fun)
-      (frob ef-write-c-string-fun)
-      (frob ef-octets-to-string-fun)
-      (frob ef-string-to-octets-fun))
+      #+later (frob ef-read-n-chars-fun)
+      #+later (frob ef-read-char-fun)
+      #+no (frob ef-write-n-bytes-fun)
+      #+later (frob ef-write-char-none-buffered-fun)
+      #+later (frob ef-write-char-line-buffered-fun)
+      #+later (frob ef-write-char-full-buffered-fun)
+      #+no (frob ef-resync-fun)
+      #+no (frob ef-bytes-for-char-fun)
+      #+no (frob ef-read-c-string-fun)
+      #+no (frob ef-write-c-string-fun)
+      #+no (frob ef-octets-to-string-fun)
+      #+no (frob ef-string-to-octets-fun))
     result))
 
-(defun external-format-keyword (spec) ; TODO unused?
+(defun external-format-keyword (spec)
   (typecase spec
     (keyword spec)
     ((cons keyword) (car spec))))
@@ -726,28 +953,32 @@ EXPERIMENTAL: Interface subject to change."
     (typecase spec
       (keyword
        name)
-      ((cons keyword)
+      ((cons keyword) ; TODO normalize newline-coding name
        (cons name (rest spec))))))
+
+(defvar *default-newline-coding* #+win32 :crlf #-win32 :lf)
 
 (defun external-format-designator-to-key (designator
                                           &key
+                                          (default-newline-coding *default-newline-coding*)
                                           default-replacement)
   (destructuring-bind (character-coding-name
                        &key
+                       ((:newline-coding newline-coding-name) default-newline-coding)
                        (replacement default-replacement))
       (ensure-list designator)
-    (list character-coding-name replacement)))
+    (list character-coding-name newline-coding-name replacement)))
 
 ;;; Keys are lists of the form
 ;;;
-;;;   (CHARACTER-CODING-NAME REPLACEMENT)
+;;;   (CHARACTER-CODING-NAME NEWLINE-CODING-NAME REPLACEMENT)
 ;;;
 ;;; .
 (declaim (type hash-table **external-format-cache**))
 (define-load-time-global **external-format-cache**
     (make-hash-table :test #'equal))
 
-(defun replacement-handlerify (entry replacement)
+#+no (defun replacement-handlerify (entry replacement)
   (when entry
     (wrap-external-format-functions
      entry (lambda (fun)
@@ -755,15 +986,22 @@ EXPERIMENTAL: Interface subject to change."
                        fun replacement))))))
 
 (defun external-format-for-spec (spec)
-  (destructuring-bind (character-coding-name replacement) spec
+  (destructuring-bind (character-coding-name newline-coding-name replacement)
+      spec
     (flet ((missing (&rest args)
              (return-from external-format-for-spec args)))
-      (let ((character-coding (find-character-coding character-coding-name
-                                                     :if-does-not-exist #'missing)))
+      (let ((character-coding (find-character-coding
+                               character-coding-name
+                               :if-does-not-exist #'missing))
+            (newline-coding (find-newline-coding
+                             newline-coding-name
+                             :if-does-not-exist #'missing)))
         (values (lambda ()
                   (make-external-format/maybe-add-replacements
-                   character-coding replacement))
-                (list (first (cc-names character-coding)) replacement))))))
+                   character-coding newline-coding replacement))
+                (list (cc-name character-coding)
+                      (nc-name newline-coding)
+                      replacement))))))
 
 ;;; Try to find the external format designated by SPEC (which is the
 ;;; result of calling EXTERNAL-FORMAT-DESIGNATOR-TO-KEY on a
@@ -816,12 +1054,20 @@ one of the following forms
 
     Name of a character coding.
 
-  (KEYWORD &key REPLACEMENT)
+  (CHARACTER-CODING &key NEWLINE-CODING REPLACEMENT)
 
-    Character coding named by KEYWORD
+    CHARACTER-CODING is a keyword designating a character coding.
+
+    If supplied, NEWLINE-CODING is a keyword designating a newline
+    coding. If not supplied, the default newline coding is used
+    instead.
+
+    If supplied, REPLACEMENT specifies a character or string that
+    should be used in place of characters which the returned external
+    format cannot decode.
 
 IF-DOES-NOT-EXIST controls the behavior in case the requested
-character-coding cannot be found:
+character-coding or newline-coding cannot be found:
 
 A function
 
@@ -894,7 +1140,6 @@ EXPERIMENTAL: Interface subject to change."
                        external-format)
                  (setf external-format :latin-1))))
         (setf *default-external-format* external-format))))
-
 
 ;;;; Backward compatibility
 

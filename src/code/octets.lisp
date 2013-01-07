@@ -225,8 +225,6 @@
                                                             array astart aend
                                                             mapper)))))))
 (instantiate-octets-definition define-latin->string)
-
-;;;; external formats
 
 
 ;;;; public interface
