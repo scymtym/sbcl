@@ -11,12 +11,9 @@
 
 (in-package "SB!IMPL")
 
-(macrolet ((def (name result access src-type &optional typep)
-             `(defun ,name (object ,@(if typep '(type) ()))
-                (declare (type ,(ecase src-type
-                                       (:list 'list)
-                                       (:vector 'vector)
-                                       (:sequence 'sequence)) object))
+(macrolet ((def (name result access src-type)
+             `(defun ,name (object type)
+                (declare (type ,src-type object))
                 (do* ((index 0 (1+ index))
                       (length (length object))
                       (result ,result)
@@ -26,18 +23,18 @@
                   (declare (type vector result))
                   (setf (,access result index)
                         ,(ecase src-type
-                           (:list '(pop in-object))
-                           (:vector '(aref in-object index))
-                           (:sequence '(elt in-object index))))))))
+                           (list '(pop in-object))
+                           (vector '(aref in-object index))
+                           (sequence '(elt in-object index))))))))
 
   (def list-to-vector* (make-sequence type length)
-    aref :list t)
+    aref list)
 
   (def vector-to-vector* (make-sequence type length)
-    aref :vector t)
+    aref vector)
 
   (def sequence-to-vector* (make-sequence type length)
-    aref :sequence t))
+    aref sequence))
 
 (defun vector-to-list* (object)
   (declare (type vector object))
