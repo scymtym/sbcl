@@ -516,22 +516,36 @@
       *empty-type*
       (%make-cons-type car-type cdr-type)))
 
+;; Returns two values: 1) the minimum length of lists of type TYPE 2)
+;; an indicator of whether the first value is the exact length of such
+;; lists:
+;; T      the first value is the exact length
+;; NIL    the first value is a lower bound
+;; :maybe ?
 (defun cons-type-length-info (type)
   (declare (type cons-type type))
-  (do ((min 1 (1+ min))
-       (cdr (cons-type-cdr-type type) (cons-type-cdr-type cdr)))
-      ((not (cons-type-p cdr))
-       (cond
-         ((csubtypep cdr (specifier-type 'null))
-          (values min t))
-         ((csubtypep *universal-type* cdr)
-          (values min nil))
-         ((type/= (type-intersection (specifier-type 'cons) cdr) *empty-type*)
-          (values min nil))
-         ((type/= (type-intersection (specifier-type 'null) cdr) *empty-type*)
-          (values min t))
-         (t (values min :maybe))))
-    ()))
+  (let ((null-type (specifier-type 'null)))
+    (do ((min 1 (1+ min))
+         (cdr (cons-type-cdr-type type) (cons-type-cdr-type cdr)))
+        ((not (cons-type-p cdr))
+         (cond
+           ;; CDR is NIL => list ends here; MIN is exact.
+           ((csubtypep cdr null-type)
+            (values min t))
+           ;; CDR is T => list may continue; MIN is lower bound.
+           ((csubtypep *universal-type* cdr)
+            (values min nil))
+           ;; CDR type intersects with CONS, but is not a CONS-TYPE =>
+           ;; list may continue but we cannot analyze how; MIN is
+           ;; lower bound.
+           ((type/= (type-intersection (specifier-type 'cons) cdr) *empty-type*)
+            (values min nil))
+           ;; CDR type intersects with NULL, but not CONS => list ends
+           ;; here; MIN is exact.
+           ((type/= (type-intersection null-type cdr) *empty-type*)
+            (values min t))
+           ;; CDR is something else => MIN is lower bound.
+           (t (values min :maybe)))))))
 
 ;;; A SIMD-PACK-TYPE is used to represent a SIMD-PACK type.
 #!+sb-simd-pack
