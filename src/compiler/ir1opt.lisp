@@ -57,7 +57,7 @@
   (#+sb-xc-host cl:defmacro
    #-sb-xc-host sb!xc:defmacro
         lvar-type-using (lvar accessor)
-     `(let ((uses (lvar-uses ,lvar)))
+     `(let ((uses (principal-lvar-use ,lvar)))
         (cond ((null uses) *empty-type*)
               ((listp uses)
                (do ((res (,accessor (first uses))
