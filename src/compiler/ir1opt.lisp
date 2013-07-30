@@ -135,7 +135,8 @@
     (if (ref-p node)
         (let ((leaf (ref-leaf node)))
           (if (and (basic-var-p leaf)
-                   (cdr (leaf-refs leaf)))
+                   ;; multiple refs => be conservative
+                   (rest (remove-if-not #'ref-lvar (leaf-refs leaf))))
               (coerce-to-values
                (if (eq :declared (leaf-where-from leaf))
                    (leaf-type leaf)
