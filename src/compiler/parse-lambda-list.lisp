@@ -42,6 +42,7 @@
                            (values list list boolean t boolean list boolean
                                    boolean list boolean t t))
                 parse-lambda-list))
+;; TODO similar to parse-defmacro-lambda-list
 (defun parse-lambda-list-like-thing (list &key silent)
   (collect ((required)
             (optional)
