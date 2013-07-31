@@ -63,6 +63,15 @@
   documentation)
 
 ;;; functions, macros, and special forms
+(defmethod documentation ((x symbol) (doc-type (eql 'defmacro-test2::lambda-list-section)))
+  (documentation (defmacro-test2::find-lambda-list-section x) doc-type))
+
+(defmethod documentation ((x defmacro-test2::lambda-list-section) (doc-type (eql 'defmacro-test2::lambda-list-section)))
+  (defmacro-test2::lambda-list-section-documentation x))
+
+(defmethod documentation ((x defmacro-test2::lambda-list-section) (doc-type (eql 't)))
+  (defmacro-test2::lambda-list-section-documentation x))
+
 (defmethod documentation ((x function) (doc-type (eql 't)))
   (fun-doc x))
 
