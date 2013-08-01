@@ -1132,6 +1132,22 @@
 ;;                  (C (CAR (CDR (CDR same-as-ARGS1072)))))
 ;;             (VALUES A B C)))))))
 
+(defun make-list-type (minimum maximum)
+  (aver (or (not maximum) (<= minimum maximum)))
+  (flet ((make-type (length &key (lastcar-type t) optional)
+           (reduce (lambda (x y)
+                     (declare (ignore x))
+                     (if optional
+                         `(or null (cons t ,y))
+                         `(cons t ,y)))
+                   (make-list length)
+                   :from-end t :initial-value lastcar-type)))
+    (let ((optional-list (when maximum
+                           (make-type (- maximum minimum)
+                                      :optional t
+                                      :lastcar-type 'null))))
+      (make-type minimum :lastcar-type optional-list))))
+
 ;;; FIXME: it really should be possible to take advantage of the
 ;;; macros used in code/seq.lisp here to avoid duplication of code,
 ;;; and enable even funkier transformations.
