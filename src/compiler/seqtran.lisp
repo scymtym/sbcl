@@ -1225,23 +1225,31 @@
 
 ;;;; CONS accessor DERIVE-TYPE optimizers
 
-(defoptimizer (car derive-type) ((cons))
-  ;; This and CDR needs to use LVAR-CONSERVATIVE-TYPE because type inference
-  ;; gets confused by things like (SETF CAR).
-  (let ((type (lvar-conservative-type cons))
-        (null-type (specifier-type 'null)))
-    (cond ((eq type null-type)
-           null-type)
-          ((cons-type-p type)
-           (cons-type-car-type type)))))
+(macrolet
+    ((define (function component-accessor)
+       `(defoptimizer (,function derive-type) ((cons))
+          ;; This needs to use LVAR-CONSERVATIVE-TYPE because type
+          ;; inference gets confused by things like (SETF CAR).
+          (let ((type (lvar-conservative-type cons))
+                (null-type (specifier-type 'null))
+                (cons-type (specifier-type 'cons))
+                (list-type (specifier-type 'list)))
+            (cond ((eq type null-type)
+                   null-type)
+                  ((cons-type-p type)
+                   (,component-accessor type))
+                  ((csubtypep type list-type)
+                   (let ((intersection (sb!kernel::extract-intersecting-type ; TODO export
+                                        type cons-type)))
+                     (when intersection
+                       (let ((result (,component-accessor intersection)))
+                         (unless (type= result *universal-type*)
+                           (specifier-type
+                            `(or null ,(type-specifier result)))))))))))))
 
-(defoptimizer (cdr derive-type) ((cons))
-  (let ((type (lvar-conservative-type cons))
-        (null-type (specifier-type 'null)))
-    (cond ((eq type null-type)
-           null-type)
-          ((cons-type-p type)
-           (cons-type-cdr-type type)))))
+  (define car cons-type-car-type)
+  (define cdr cons-type-cdr-type))
+
 
 ;;;; FIND, POSITION, and their -IF and -IF-NOT variants
 
