@@ -1009,8 +1009,8 @@
   (funcall (type-class-negate (type-class-info type)) type))
 
 (defun-cached (type-singleton-p :hash-function (lambda (type)
-                                              (logand (type-hash-value type)
-                                                      #xff))
+                                                 (logand (type-hash-value type)
+                                                         #xff))
                              :hash-bits 8
                              :values 2
                              :default (values nil t)
@@ -1148,6 +1148,7 @@
 
 (!define-type-class named)
 
+;; TODO add null cons
 (!cold-init-forms
  (macrolet ((frob (name var)
               `(progn
@@ -2855,6 +2856,7 @@ used for a COMPLEX component.~:@>"
                   *empty-type*)
                (nreverse numbers)))
       *empty-type*))
+
 
 ;;;; intersection types
 ;;;;
@@ -3199,6 +3201,7 @@ used for a COMPLEX component.~:@>"
     (make-cons-type car-type cdr-type)))
 
 (!define-type-method (cons :negate) (type)
+  ;; TODO check for recursion
   (if (and (eq (cons-type-car-type type) *universal-type*)
            (eq (cons-type-cdr-type type) *universal-type*))
       (make-negation-type :type type)
@@ -3225,6 +3228,7 @@ used for a COMPLEX component.~:@>"
          (t (bug "Weird CONS type ~S" type))))))
 
 (!define-type-method (cons :unparse) (type)
+  ;; TODO check for recursion
   (let ((car-eltype (type-specifier (cons-type-car-type type)))
         (cdr-eltype (type-specifier (cons-type-cdr-type type))))
     (if (and (member car-eltype '(t *))
@@ -3234,6 +3238,7 @@ used for a COMPLEX component.~:@>"
 
 (!define-type-method (cons :simple-=) (type1 type2)
   (declare (type cons-type type1 type2))
+  ;; TODO check for recursion
   (multiple-value-bind (car-match car-win)
       (type= (cons-type-car-type type1) (cons-type-car-type type2))
     (multiple-value-bind (cdr-match cdr-win)
@@ -3254,6 +3259,7 @@ used for a COMPLEX component.~:@>"
 
 (!define-type-method (cons :simple-subtypep) (type1 type2)
   (declare (type cons-type type1 type2))
+  ;; TODO check for recursion
   (multiple-value-bind (val-car win-car)
       (csubtypep (cons-type-car-type type1) (cons-type-car-type type2))
     (multiple-value-bind (val-cdr win-cdr)
@@ -3267,6 +3273,7 @@ used for a COMPLEX component.~:@>"
 ;;; overly general types.
 (!define-type-method (cons :simple-union2) (type1 type2)
   (declare (type cons-type type1 type2))
+  ;; TODO check for recursion
   (let ((car-type1 (cons-type-car-type type1))
         (car-type2 (cons-type-car-type type2))
         (cdr-type1 (cons-type-cdr-type type1))

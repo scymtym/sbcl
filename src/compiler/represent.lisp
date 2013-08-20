@@ -420,7 +420,7 @@
 ;;; Emit a coercion VOP for OP BEFORE the specified VOP or die trying.
 ;;; SCS is the operand's LOAD-SCS vector, which we use to determine
 ;;; what SCs the VOP will accept. We pick any acceptable coerce VOP,
-;;; since it practice it seems uninteresting to have more than one
+;;; since in practice it seems uninteresting to have more than one
 ;;; applicable.
 ;;;
 ;;; On the X86 port, stack SCs may be placed in the list of operand

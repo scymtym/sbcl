@@ -653,36 +653,36 @@
         (values-names (make-gensym-list values)))
     (multiple-value-bind (body decls doc) (parse-body body-decls-doc)
       `(progn
-        (define-hash-cache ,name ,args ,@options)
-        (defun ,name ,arg-names
-          ,@decls
-          ,doc
-          (cond #!+sb-show
-                ((not (boundp '*hash-caches-initialized-p*))
-                 ;; This shouldn't happen, but it did happen to me
-                 ;; when revising the type system, and it's a lot
-                 ;; easier to figure out what what's going on with
-                 ;; that kind of problem if the system can be kept
-                 ;; alive until cold boot is complete. The recovery
-                 ;; mechanism should definitely be conditional on some
-                 ;; debugging feature (e.g. SB-SHOW) because it's big,
-                 ;; duplicating all the BODY code. -- WHN
-                 (/show0 ,name " too early in cold init, uncached")
-                 (/show0 ,(first arg-names) "=..")
-                 (/hexstr ,(first arg-names))
-                 ,@body)
-                (t
-                 (multiple-value-bind ,values-names
-                     (,(symbolicate name "-CACHE-LOOKUP") ,@arg-names)
-                   (if (and ,@(mapcar (lambda (val def)
-                                        `(eq ,val ,def))
-                                      values-names default-values))
-                       (multiple-value-bind ,values-names
-                           (progn ,@body)
-                         (,(symbolicate name "-CACHE-ENTER") ,@arg-names
+         (define-hash-cache ,name ,args ,@options)
+         (defun ,name ,arg-names
+           ,@decls
+           ,doc
+           (cond #!+sb-show
+                 ((not (boundp '*hash-caches-initialized-p*))
+                  ;; This shouldn't happen, but it did happen to me
+                  ;; when revising the type system, and it's a lot
+                  ;; easier to figure out what what's going on with
+                  ;; that kind of problem if the system can be kept
+                  ;; alive until cold boot is complete. The recovery
+                  ;; mechanism should definitely be conditional on some
+                  ;; debugging feature (e.g. SB-SHOW) because it's big,
+                  ;; duplicating all the BODY code. -- WHN
+                  (/show0 ,name " too early in cold init, uncached")
+                  (/show0 ,(first arg-names) "=..")
+                  (/hexstr ,(first arg-names))
+                  ,@body)
+                 (t
+                  (multiple-value-bind ,values-names
+                      (,(symbolicate name "-CACHE-LOOKUP") ,@arg-names)
+                    (if (and ,@(mapcar (lambda (val def)
+                                         `(eq ,val ,def))
+                                       values-names default-values))
+                        (multiple-value-bind ,values-names
+                            (progn ,@body)
+                          (,(symbolicate name "-CACHE-ENTER") ,@arg-names
                            ,@values-names)
-                         (values ,@values-names))
-                       (values ,@values-names))))))))))
+                          (values ,@values-names))
+                        (values ,@values-names))))))))))
 
 (defmacro define-cached-synonym
     (name &optional (original (symbolicate "%" name)))

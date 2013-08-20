@@ -496,7 +496,7 @@
                                             (enumerable types))
                               (:copier nil)))
 
-(defun extract-intersecting-type (containing-type type)
+(defun extract-intersecting-type (containing-type type) ; TODO fails for recursive types
   (declare (type ctype containing-type type))
   (let ((type-type (type-of type))
         (intersection (type-intersection containing-type type)))
