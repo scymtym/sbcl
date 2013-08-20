@@ -4,6 +4,7 @@
            #:really-invoke-debugger
            #:*break-on-failure* #:*break-on-expected-failure*
            #:make-kill-thread #:make-join-thread
+           #:docases
            #:runtime))
 
 (in-package :test-util)
@@ -134,6 +135,14 @@
   (cons (format nil "SBCL_MACHINE_TYPE=~A" (machine-type))
         (cons (format nil "SBCL_SOFTWARE_TYPE=~A" (software-type))
               (posix-environ))))
+
+(defmacro docases (((&rest vars) &body body) &body cases)
+  "TODO(jmoringe): document"
+  (sb-int:with-unique-names (arg)
+    `(mapc (lambda (,arg)
+             (destructuring-bind ,vars ,arg
+               ,@body))
+           (list ,@cases))))
 
 ;;; Repeat calling THUNK until its cumulated runtime, measured using
 ;;; GET-INTERNAL-RUN-TIME, is larger than PRECISION. Repeat this
