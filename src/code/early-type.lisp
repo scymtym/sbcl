@@ -496,6 +496,19 @@
                                             (enumerable types))
                               (:copier nil)))
 
+(defun extract-intersecting-type (containing-type type)
+  (declare (type ctype containing-type type))
+  (let ((type-type (type-of type))
+        (intersection (type-intersection containing-type type)))
+    (cond
+      ((type= intersection *empty-type*)
+       nil)
+      ((typep intersection type-type)
+       intersection)
+      ((compound-type-p intersection)
+       (find-if (lambda (element) (typep element type-type))
+                (compound-type-types intersection))))))
+
 ;;; Return TYPE converted to canonical form for a situation where the
 ;;; "type" '* (which SBCL still represents as a type even though ANSI
 ;;; CL defines it as a related but different kind of placeholder) is
