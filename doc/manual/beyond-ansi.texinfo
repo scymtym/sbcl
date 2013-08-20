@@ -7,20 +7,21 @@ ANSI standard. SBCL doesn't support as many extensions as CMUCL, but
 it still has quite a few.  @xref{Contributed Modules}.
 
 @menu
-* Reader Extensions::           
-* Package-Local Nicknames::     
-* Package Variance::            
-* Garbage Collection::          
-* Metaobject Protocol::         
-* Support For Unix::            
-* Customization Hooks for Users::  
-* Tools To Help Developers::    
-* Resolution of Name Conflicts::  
-* Hash Table Extensions::       
-* Random Number Generation::    
-* Miscellaneous Extensions::    
-* Stale Extensions::            
-* Efficiency Hacks::            
+* Reader Extensions::
+* Recursive Types::
+* Package-Local Nicknames::
+* Package Variance::
+* Garbage Collection::
+* Metaobject Protocol::
+* Support For Unix::
+* Customization Hooks for Users::
+* Tools To Help Developers::
+* Resolution of Name Conflicts::
+* Hash Table Extensions::
+* Random Number Generation::
+* Miscellaneous Extensions::
+* Stale Extensions::
+* Efficiency Hacks::
 @end menu
 
 @node Reader Extensions
@@ -44,6 +45,45 @@ Example:
 
 Doesn't alter @code{*package*}: if @code{foo::bar} would cause a
 read-time package lock violation, so does @code{foo::(bar)}.
+
+@node Recursive Types
+@comment  node-name,  next,  previous,  up
+@section Recursive Types
+@cindex Recursive Types
+
+Generally, ANSI Common Lisp does not explicitly allow any kind of
+structural recursion in @code{deftype} bodies and type specifiers in
+general and X3J13 Issue RECURSIVE-DEFTYPE:EXPLICITLY-VAGUE even
+explicitly forbids some kinds of recursive type
+specifiers. For these latter cases, SBCL signals
+@code{sb-int:parse-type-error}
+@comment TODO correct package?
+. However SBCL provides support for some structurally recursive types,
+for which RECURSIVE-DEFTYPE:EXPLICITLY-VAGUE specifies undefined
+consequences:
+
+Examples
+
+
+@lisp
+(deftype list-of-length (length)
+  (if (= 0 length)
+    'null
+    `(cons t (list-of-length ,(- length 1)))))
+@end lisp
+
+@lisp
+(deftype proper-list (&optional (element-type t))
+  `(or null (cons ,element-type (proper-list ,element-type))))
+@end lisp
+
+Note: @code{proper-list} example is slightly adapted from X3J13 Issue
+RECURSIVE-DEFTYPE:EXPLICITLY-VAGUE.
+
+Note that, as mentioned above,
+@lisp
+'(or . #1=(t . #1#))
+@end lisp
 
 @node  Package-Local Nicknames
 @comment  node-name,  next,  previous,  up
@@ -367,9 +407,9 @@ to the constant @code{+slot-unbound+}.
 @section Support For Unix
 
 @menu
-* Command-line arguments::      
-* Querying the process environment::  
-* Running external programs::   
+* Command-line arguments::
+* Querying the process environment::
+* Running external programs::
 @end menu
 
 @node Command-line arguments
