@@ -282,6 +282,15 @@
  ;; This doesn't affect the build at all, merely declares how things are.
  :package-local-nicknames
 
+ ;; Support for structurally recursive types as described in X3J13
+ ;; Issue RECURSIVE-DEFTYPE by the passage
+ ;;
+ ;;   "a type specifier [containing] any circular structure"
+ ;;
+ ;; As with :package-local-nicknames, no :sb-prefix as this feature
+ ;; may be implemented in other implementations.
+ :recursive-types
+
  ;; This affects the definition of a lot of things in bignum.lisp. It
  ;; doesn't seem to be documented anywhere what systems it might apply
  ;; to. It doesn't seem to be needed for X86 systems anyway.
