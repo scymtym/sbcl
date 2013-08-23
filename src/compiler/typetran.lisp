@@ -88,20 +88,20 @@
                    (t
                     (give-up-ir1-transform)))))
       (cond ((not (types-equal-or-intersect otype type))
-            nil)
-           ((csubtypep otype type)
-            t)
-           ((eq type *empty-type*)
-            nil)
-           (t
-            (let ((intersect (type-intersection2 type otype)))
-              (unless intersect
-                (tricky))
-              (multiple-value-bind (constantp value)
-                  (type-singleton-p intersect)
-                (if constantp
-                    `(eql object ',value)
-                    (tricky)))))))))
+             nil)
+            ((csubtypep otype type)
+             t)
+            ((eq type *empty-type*)
+             nil)
+            (t
+             (let ((intersect (type-intersection2 type otype)))
+               (unless intersect
+                 (tricky))
+               (multiple-value-bind (constantp value)
+                   (type-singleton-p intersect)
+                 (if constantp
+                     `(eql object ',value)
+                     (tricky)))))))))
 
 ;;; Flush %TYPEP tests whose result is known at compile time.
 (deftransform %typep ((object type) * * :node node)
