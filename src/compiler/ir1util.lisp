@@ -2216,7 +2216,7 @@ is :ANY, the function name is not checked."
        `(progn
           (defun ,careful (specifier)
             (handler-case (,basic specifier)
-              (sb!kernel::arg-count-error (condition)
+              (sb!kernel::arg-count-error (condition) ;; TODO TYPE-PARSE-ERROR
                 (values nil (list (format nil "~A" condition))))
               (simple-error (condition)
                 (values nil (list* (simple-condition-format-control condition)
@@ -2230,8 +2230,14 @@ is :ANY, the function name is not checked."
               (or type
                   (apply #'give-up-ir1-transform
                          error-args)))))))
-  (deffrob specifier-type careful-specifier-type compiler-specifier-type ir1-transform-specifier-type)
-  (deffrob values-specifier-type careful-values-specifier-type compiler-values-specifier-type ir1-transform-values-specifier-type))
+  (deffrob specifier-type
+    careful-specifier-type
+    compiler-specifier-type
+    ir1-transform-specifier-type)
+  (deffrob values-specifier-type
+    careful-values-specifier-type
+    compiler-values-specifier-type
+    ir1-transform-values-specifier-type))
 
 
 ;;;; utilities used at run-time for parsing &KEY args in IR1

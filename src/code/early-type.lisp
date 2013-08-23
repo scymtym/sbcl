@@ -474,8 +474,11 @@
 ;;;   2. There are never any UNION-TYPE components.
 (defstruct (union-type (:include compound-type
                                  (class-info (type-class-or-lose 'union)))
-                       (:constructor %make-union-type (enumerable types))
+                       (:constructor %%make-union-type (enumerable types))
                        (:copier nil)))
+(defun %make-union-type (enumerable types)
+  (assert (every (lambda (x) (typep x 'ctype)) types))
+  (%%make-union-type enumerable types))
 (define-cached-synonym make-union-type)
 
 ;;; An INTERSECTION-TYPE represents a use of the AND type specifier
@@ -492,9 +495,14 @@
 (defstruct (intersection-type (:include compound-type
                                         (class-info (type-class-or-lose
                                                      'intersection)))
-                              (:constructor %make-intersection-type
+                              (:constructor %%make-intersection-type
                                             (enumerable types))
                               (:copier nil)))
+(defun %make-intersection-type (enumerable types)
+  (assert (every (lambda (x) (typep x 'ctype)) types))
+  (when (some (lambda (x) (typep x 'back-edge)) types)
+    (break))
+  (%%make-intersection-type enumerable types))
 
 (defun extract-intersecting-type (containing-type type) ; TODO fails for recursive types
   (declare (type ctype containing-type type))
@@ -642,9 +650,12 @@
   (target nil :type (or null ctype)))
 
 (defun normalize-recursive-type (type)
-  (labels ((rec (type)
+  (declare (optimize (debug 3) (safety 3)))
+  (labels ((%rec (type)
+             (declare (type ctype type))
              (typecase type
                (back-edge ; replace BACK-EDGE node with its pointee
+                (aver (back-edge-target type))
                 (back-edge-target type))
                (negation-type ; update potentially changed inner type
                 (setf (negation-type-type type)
@@ -660,7 +671,11 @@
                       (rec (cons-type-cdr-type type)))
                 type)
                (t
-                type))))
+                type)))
+           (rec (type)
+             (let ((result (%rec type)))
+               (check-type result ctype)
+               result)))
     (rec type)))
 
 ;;; Return the type structure corresponding to a type specifier. We
@@ -758,6 +773,7 @@
             ;; TODO explain
             (when (cdr cell)
               ;; TODO explain
+              (aver result)
               (setf (back-edge-target (cdr cell)) result)
               ;;
               (setf result (normalize-recursive-type result))
@@ -780,6 +796,7 @@
               ;; of VALID-TYPE-SPECIFIER-P.)
               (return-from values-specifier-type
                 result))
+            (aver (not (back-edge-p result)))
             result))))))
 
 ;;; This is like VALUES-SPECIFIER-TYPE, except that we guarantee to

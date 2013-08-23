@@ -3088,6 +3088,7 @@ used for a COMPLEX component.~:@>"
   (union-complex-subtypep-arg1 type1 type2))
 
 (defun union-complex-subtypep-arg2 (type1 type2)
+  (declare (optimize (debug 3) (safety 3)))
   ;; At this stage, we know that type2 is a union type and type1
   ;; isn't. We might as well check this, though:
   (aver (union-type-p type2))
