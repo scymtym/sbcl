@@ -22,7 +22,8 @@
 ;;; the following as a safety measure:
 
 (setf *print-circle* nil
-      *print-length* 10)
+      *print-length* 10
+      *print-level* 5)
 
 ;;; SPECIFIER-TYPE
 ;;;
@@ -103,9 +104,9 @@
                                             :not-wellformed))
   (macrolet ((test (specifier)
                `(twice ; repeat to test caches
-                 (assert (raises-error?
-                          (sb-kernel:specifier-type ',specifier)
-                          sb-int:type-parse-error)))))
+                  (assert (raises-error?
+                           (sb-kernel:specifier-type ',specifier)
+                           sb-int:type-parse-error)))))
     (test (and . #1=(t . #1#)))
     (test (or . #1#))
     (test (not . #1#))
@@ -116,9 +117,9 @@
                                             :semantically-invalid))
   (macrolet ((test (specifier)
                `(twice ; repeat to test caches
-                  (assert (raises-error?
-                           (sb-kernel:specifier-type ',specifier)
-                           sb-int:type-parse-error)))))
+                 (assert (raises-error?
+                          (sb-kernel:specifier-type ',specifier)
+                          sb-int:type-parse-error)))))
     (test #1=(and #1#))
     (test #2=(and t . #2#))
     (test #3=(or #3#))
@@ -213,7 +214,7 @@
                `(twice ; repeat to test caches
                   (print ',type)
                   (assert (eq ,expected (typep ,object ',type)))
-                  (assert (eq ,expected (eval '(typep ,object ',type)))))))
+                  (assert (eq ,expected (eval '(typep ,object ',type))))))) ;; TODO test %%TYPEP explicitly
     (test #1=(and (cons t string) (cons #1#)) nil                         nil)
     (test #2=(and (cons t string) (cons #2#)) (cons 1 "foo")              nil)
     (test #3=(and (cons t string) (cons #3#)) (cons (cons 1 "foo") "bar") nil)
