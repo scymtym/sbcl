@@ -2796,7 +2796,11 @@ used for a COMPLEX component.~:@>"
             (values nil t)))
       (values nil t)))
 
-(!def-type-translator member (&rest members)
+(!def-type-translator member (&whole whole &rest members)
+  (unless (proper-list-p members)
+    (type-parse-error
+     whole t
+     "~@<Invalid circular ~S specifier list ~S~@:>" 'member members))
   (if members
       (let (ms numbers char-codes)
         (dolist (m (remove-duplicates members))
@@ -2964,6 +2968,10 @@ used for a COMPLEX component.~:@>"
                      (type-intersection accumulator union))))))))
 
 (!def-type-translator and (&whole whole &rest type-specifiers)
+  (unless (proper-list-p type-specifiers)
+    (type-parse-error
+     whole t
+     "~@<Invalid circular ~S specifier list ~S~@:>" 'or type-specifiers))
   (apply #'type-intersection
          (mapcar #'specifier-type type-specifiers)))
 
@@ -3133,10 +3141,12 @@ used for a COMPLEX component.~:@>"
                    (type-union accumulator
                                (type-intersection type1 t2))))))))
 
-(!def-type-translator or (&rest type-specifiers)
-  (apply #'type-union
-         (mapcar #'specifier-type
-                 type-specifiers)))
+(!def-type-translator or (&whole whole &rest type-specifiers)
+  (unless (proper-list-p type-specifiers)
+    (type-parse-error
+     whole t
+     "~@<Invalid circular ~S specifier list ~S~@:>" 'or type-specifiers))
+  (apply #'type-union (mapcar #'specifier-type type-specifiers)))
 
 ;;;; CONS types
 

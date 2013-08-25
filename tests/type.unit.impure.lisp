@@ -18,6 +18,12 @@
 (defmacro twice (&body body)
   `(progn ,@body ,@body))
 
+;;; Since this file makes excessive use of circular structures, we do
+;;; the following as a safety measure:
+
+(setf *print-circle* nil
+      *print-length* 10)
+
 ;;; SPECIFIER-TYPE
 ;;;
 ;;; These tests ensure that SPECIFIER-TYPE signals errors for invalid
@@ -90,3 +96,17 @@
                             'sb-kernel:unknown-type))
            (sb-kernel:parse-unknown-type ()
              :ok))))))
+
+;; Type specifiers of this form are specified as invalid in X3J13
+;; Issue RECURSIVE-DEFTYPE.
+(with-test (:name (sb-kernel:specifier-type :invalid-recursive-types
+                                            :not-wellformed))
+  (macrolet ((test (specifier)
+               `(twice ; repeat to test caches
+                 (assert (raises-error?
+                          (sb-kernel:specifier-type ',specifier)
+                          sb-int:type-parse-error)))))
+    (test (and . #1=(t . #1#)))
+    (test (or . #1#))
+    (test (not . #1#))
+    (test (member . #2=(:foo . #2#)))))
