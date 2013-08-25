@@ -151,3 +151,33 @@
     (test (specifier-type.list-of-length 0)    sb-kernel:member-type)
     (test (specifier-type.list-of-length 1)    sb-kernel:cons-type)
     (test (specifier-type.list-of-length 1024) sb-kernel:cons-type)))
+
+;;; TYPE=
+
+;; TODO test unknown types
+
+(deftype type=.proper-list (&optional (element-type t))
+  `(or null (cons ,element-type (type=.proper-list ,element-type))))
+
+(deftype type=.list-of-length (length)
+  (if (= 0 length)
+      'null
+      `(cons t (type=.list-of-length ,(- length 1)))))
+
+(with-test (:name (type= :valid-recursive-types))
+  (macrolet ((test (type1 type2 expected)
+               `(twice ; repeat to test caches
+                  (print ',type1) ;; TODO evaluated
+                  (assert (eq ,expected
+                              (sb-kernel:type=
+                               (sb-kernel:specifier-type ',type1)
+                               (sb-kernel:specifier-type ',type2)))))))
+    ;; TODO add ≠ cases
+    (test #1=(and (cons t string) (cons #1#)) #2=(and (cons t string) (cons #2#)) t)
+    #+no (test #3=(or null (cons integer #3#))     #4=(or null (cons integer #4#))     t)
+    #+no (test #5=(not (cons symbol #5#))          #6=(not (cons symbol #6#))          t)
+    (test type=.proper-list                   type=.proper-list                   t)
+    (test (type=.proper-list integer)         (type=.proper-list integer)         t)
+    (test (type=.list-of-length 0)            (type=.list-of-length 0)            t)
+    (test (type=.list-of-length 1)            (type=.list-of-length 1)            t)
+    #+no (test (type=.list-of-length 1024)         (type=.list-of-length 1024)         t)))

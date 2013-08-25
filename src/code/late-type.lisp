@@ -820,16 +820,23 @@
 ;;; If two types are definitely equivalent, return true. The second
 ;;; value indicates whether the first value is definitely correct.
 ;;; This should only fail in the presence of HAIRY types.
+(defvar *type=-seen* '())
 (defun-cached (type= :hash-function type-cache-hash
                      :hash-bits 8
                      :values 2
                      :default (values nil :empty)
                      :init-wrapper !cold-init-forms)
-              ((type1 eq) (type2 eq))
+    ((type1 eq) (type2 eq))
   (declare (type ctype type1 type2))
-  (if (eq type1 type2)
-      (values t t)
-      (!invoke-type-method :simple-= :complex-= type1 type2)))
+  (cond
+    ((eq type1 type2)
+     (values t t))
+    ((find type2 (remove type1 *type=-seen* :test #'neq :key #'car)
+           :test #'eq :key #'cdr)
+     (values t t))
+    (t
+     (let ((*type=-seen* (list* (cons type1 type2) *type=-seen*)))
+       (!invoke-type-method :simple-= :complex-= t1 t2)))))
 
 ;;; Not exactly the negation of TYPE=, since when the relationship is
 ;;; uncertain, we still return NIL, NIL. This is useful in cases where
@@ -984,8 +991,10 @@
   (declare (type ctype type))
   (or (cdr (assoc type *type-specifier-seen* :test #'type=))
       (let* ((cell (list 'and nil))
-             (*type-specifier-seen* (cons (cons type cell) *type-specifier-seen*))
-             (result (funcall (type-class-unparse (type-class-info type)) type)))
+             (*type-specifier-seen*
+               (list* (cons type cell) *type-specifier-seen*))
+             (result
+               (funcall (type-class-unparse (type-class-info type)) type)))
         (setf (second cell) result))))
 
 (defun-cached (type-negation :hash-function (lambda (type)
@@ -1012,6 +1021,19 @@
     (if function
         (funcall function type)
         (values nil nil))))
+
+;; Return true if TYPE is a structure, cons or otherwise complex type
+;; which contains itself.
+;; TODO cache
+(defvar *recursive-type-p-root* nil)
+(defun recursive-type-p (type)
+  (declare (type ctype type))
+  (or (eq type *recursive-type-p-root*)
+      (let ((function (type-class-recursive-p (type-class-info type))))
+        (if function
+            (let ((*recursive-type-p-root* (or *recursive-type-p-root* type)))
+              (funcall function type))
+            nil))))
 
 ;;; (VALUES-SPECIFIER-TYPE and SPECIFIER-TYPE moved from here to
 ;;; early-type.lisp by WHN ca. 19990201.)
@@ -1164,21 +1186,23 @@
 
 (defun cons-type-might-be-empty-type (type)
   (declare (type cons-type type))
-  (let ((car-type (cons-type-car-type type))
-        (cdr-type (cons-type-cdr-type type)))
-    (or
-     (if (cons-type-p car-type)
-         (cons-type-might-be-empty-type car-type)
-         (multiple-value-bind (yes surep)
-             (type= car-type *empty-type*)
-           (aver (not yes))
-           (not surep)))
-     (if (cons-type-p cdr-type)
-         (cons-type-might-be-empty-type cdr-type)
-         (multiple-value-bind (yes surep)
-             (type= cdr-type *empty-type*)
-           (aver (not yes))
-           (not surep))))))
+  (labels ((c*r-might-be-empty-p (type)
+             (multiple-value-bind (emptyp surep)
+                 (type= type *empty-type*)
+               (aver (not emptyp))
+               (not surep)))
+           (rec (type seen)
+             (or (find type seen :test #'eq)
+                 (let ((car-type (cons-type-car-type type))
+                       (cdr-type (cons-type-cdr-type type)))
+                   (cond
+                     ((cons-type-p car-type)
+                      (rec car-type (list* car-type seen)))
+                     ((c*r-might-be-empty-p car-type))
+                     ((cons-type-p cdr-type)
+                      (rec cdr-type (list* cdr-type seen)))
+                     ((c*r-might-be-empty-p cdr-type)))))))
+    (rec type '())))
 
 (!define-type-method (named :complex-=) (type1 type2)
   (cond
@@ -1647,6 +1671,10 @@
 
 (!define-type-method (negation :simple-=) (type1 type2)
   (type= (negation-type-type type1) (negation-type-type type2)))
+
+(!define-type-method (negation :recursive-p) (type)
+  (declare (type negation-type type))
+  (recursive-type-p (negation-type-type type)))
 
 (!def-type-translator not (typespec)
   (type-negation (specifier-type typespec)))
@@ -2972,6 +3000,10 @@ used for a COMPLEX component.~:@>"
                (setf accumulator
                      (type-intersection accumulator union))))))))
 
+(!define-type-method (intersection :recursive-p) (type)
+  (declare (type intersection-type type))
+  (some #'recursive-type-p (compound-type-types type)))
+
 (!def-type-translator and (&whole whole &rest type-specifiers)
   (unless (proper-list-p type-specifiers)
     (type-parse-error
@@ -3084,10 +3116,10 @@ used for a COMPLEX component.~:@>"
   ;;
   ;; Ouch. - CSR, 2002-04-10
   (multiple-value-bind (sub-value sub-certain?)
-      (type= type1
-             (apply #'type-union
-                    (mapcar (lambda (x) (type-intersection type1 x))
-                            (union-type-types type2))))
+      (let ((intersections (mapcar (lambda (x) (type-intersection type1 x))
+                                   (union-type-types type2))))
+        (when (notany #'null intersections)
+          (type= type1 (apply #'type-union intersections))))
     (if sub-certain?
         (values sub-value sub-certain?)
         ;; The ANY/TYPE expression above is a sufficient condition for
@@ -3145,6 +3177,10 @@ used for a COMPLEX component.~:@>"
              (setf accumulator
                    (type-union accumulator
                                (type-intersection type1 t2))))))))
+
+(!define-type-method (union :recursive-p) (type)
+  (declare (type union-type type))
+  (some #'recursive-type-p (compound-type-types type)))
 
 (!def-type-translator or (&whole whole &rest type-specifiers)
   (unless (proper-list-p type-specifiers)
@@ -3281,22 +3317,77 @@ used for a COMPLEX component.~:@>"
             ((csubtypep cdr-type2 cdr-type1)
              (frob-cdr car-type2 car-type1 cdr-type2 cdr-type1))))))
 
-(!define-type-method (cons :simple-intersection2) (type1 type2)
-  (declare (type cons-type type1 type2))
-  (let ((car-int2 (type-intersection2 (cons-type-car-type type1)
-                                      (cons-type-car-type type2)))
-        (cdr-int2 (type-intersection2 (cons-type-cdr-type type1)
-                                      (cons-type-cdr-type type2))))
+(defvar *break* nil)
+(defvar *cons-type-simple-intersection2-seen* '())
+(defun cons-type-simple-intersection2-helper (type1 type2)
+  (declare (type cons-type type1 type2)
+           (optimize (debug 3) (safety 3)))
+  #+no (let ((a *cons-type-simple-intersection2-seen*))
+    (when *break*
+      (format t "=========================================~%")
+      (let ((*break* nil))
+        (mapc (lambda (x)
+                (format t "---------------------------------------~%")
+                (describe (car (car x)))
+                (describe (cdr (car x))))
+              a))))
+  (let ((cell (find-if (lambda (cell)
+                         (and (type= type1 (car cell))
+                              (type= type2 (cdr cell))))
+                       *cons-type-simple-intersection2-seen*
+                       :key #'car)))
+    (when *break*
+      (let ((*break* nil))
+       (format t "cell ~:[<empty>~:;~]~%" cell)
+       (when cell
+         (describe (car (car cell)))
+         (describe (cdr (car cell)))
+         (format t "~S~%" (cdr cell)))))
     (cond
-      ((and car-int2 cdr-int2) (make-cons-type car-int2 cdr-int2))
-      (car-int2 (make-cons-type car-int2
-                                (type-intersection
-                                 (cons-type-cdr-type type1)
-                                 (cons-type-cdr-type type2))))
-      (cdr-int2 (make-cons-type
-                 (type-intersection (cons-type-car-type type1)
-                                    (cons-type-car-type type2))
-                 cdr-int2)))))
+      ((not cell))
+      ((cdr cell)
+       (return-from #+no cons-simple-intersection2-type-method cons-type-simple-intersection2-helper
+         (cdr cell)))
+      (t
+       (return-from #+no cons-simple-intersection2-type-method cons-type-simple-intersection2-helper
+        (setf (cdr cell) (make-back-edge))))))
+  (let* ((cell (cons (cons type1 type2) nil))
+         (*cons-type-simple-intersection2-seen*
+           (list* cell *cons-type-simple-intersection2-seen*))
+         (car-int2 (type-intersection2 (cons-type-car-type type1)
+                                       (cons-type-car-type type2)))
+         (cdr-int2 (type-intersection2 (cons-type-cdr-type type1)
+                                       (cons-type-cdr-type type2)))
+         (result
+           (cond
+             ((and car-int2 cdr-int2) (make-cons-type car-int2 cdr-int2))
+             (car-int2 (make-cons-type car-int2
+                                       (type-intersection
+                                        (cons-type-cdr-type type1)
+                                        (cons-type-cdr-type type2))))
+             (cdr-int2 (make-cons-type (type-intersection
+                                        (cons-type-car-type type1)
+                                        (cons-type-car-type type2))
+                                       cdr-int2)))))
+    (aver result)
+    ;; TODO explain
+    (when (cdr cell)
+      ;; TODO explain
+      (setf (back-edge-target (cdr cell)) result)
+      ;;
+      (setf result (normalize-recursive-type result))
+      (assert result)
+      ;; TODO remove later
+      (let ((spec `(and ,(type-specifier type1))))
+        (check-recursive-type result spec spec)))
+    result))
+(!define-type-method (cons :simple-intersection2) (type1 type2)
+  (cons-type-simple-intersection2-helper type1 type2))
+
+(!define-type-method (cons :recursive-p) (type)
+  (declare (type cons-type type))
+  (or (recursive-type-p (cons-type-car-type type))
+      (recursive-type-p (cons-type-cdr-type type))))
 
 (!define-superclasses cons ((cons)) !cold-init-forms)
 

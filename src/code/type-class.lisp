@@ -95,6 +95,14 @@
   ;; The default case (NIL) is interpreted as a function that always
   ;; returns NIL, NIL.
   (singleton-p nil :type (or function null))
+  ;; A function which returns T if the CTYPE has a recursive structure
+  ;; such as
+  ;;
+  ;;   #1=(or null (cons integer #1#))
+  ;;
+  ;; and otherwise returns NIL. The default case (NIL) is interpreted
+  ;; as a function that always returns NIL.
+  (recursive-p nil :type (or function null))
 
   #|
   Not used, and not really right. Probably we want a TYPE= alist for the
@@ -129,7 +137,8 @@
       (:complex-= . type-class-complex-=)
       (:negate . type-class-negate)
       (:unparse . type-class-unparse)
-      (:singleton-p . type-class-singleton-p))))
+      (:singleton-p . type-class-singleton-p)
+      (:recursive-p . type-class-recursive-p))))
 
 (declaim (ftype (function (type-class) type-class) copy-type-class-coldly))
 (eval-when (#-sb-xc :compile-toplevel :load-toplevel :execute)
