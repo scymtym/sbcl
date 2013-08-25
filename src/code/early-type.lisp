@@ -108,7 +108,8 @@
       (parse-lambda-list-like-thing lambda-list-like-thing :silent t)
     (declare (ignore aux morep more-context more-count))
     (when auxp
-      (error "&AUX in a FUNCTION or VALUES type: ~S." lambda-list-like-thing))
+      (type-parse-error lambda-list-like-thing nil
+                        "~@<&AUX in a FUNCTION or VALUES type.~@:>"))
     (let ((required (mapcar #'single-value-specifier-type required))
           (optional (mapcar #'single-value-specifier-type optional))
           (rest (when restp (single-value-specifier-type rest)))
@@ -116,11 +117,14 @@
            (collect ((key-info))
              (dolist (key keys)
                (unless (proper-list-of-length-p key 2)
-                 (error "Keyword type description is not a two-list: ~S." key))
+                 (type-parse-error
+                  lambda-list-like-thing nil
+                  "~@<Keyword type description is not a two-list: ~S.~@:>" key))
                (let ((kwd (first key)))
                  (when (find kwd (key-info) :key #'key-info-name)
-                   (error "~@<repeated keyword ~S in lambda list: ~2I~_~S~:>"
-                          kwd lambda-list-like-thing))
+                   (type-parse-error
+                    lambda-list-like-thing nil
+                    "~@<Repeated keyword in lambda list: ~S.~:@>" kwd))
                  (key-info
                   (make-key-info
                    :name kwd
@@ -564,9 +568,11 @@
       *empty-type*
       (%make-simd-pack-type
        (dolist (pack-type *simd-pack-element-types*
-                          (error "~S element type must be a subtype of ~
-                                     ~{~S~#[~;, or ~:;, ~]~}."
-                                 'simd-pack *simd-pack-element-types*))
+                (type-parse-error
+                 element-type nil
+                 "~@<~S element type must be a subtype of ~{~S~#[~;, or ~
+                  ~:;, ~]~}.~@:>"
+                 'simd-pack *simd-pack-element-types*))
          (when (csubtypep element-type (specifier-type pack-type))
            (return (list pack-type)))))))
 
@@ -585,6 +591,8 @@
                :init-wrapper !cold-init-forms)
               ((orig equal-but-no-car-recursion))
   (let ((u (uncross orig)))
+    (unless (typep u 'type-specifier)
+      (type-parse-error u nil "~@<Not a type specifier.~@:>"))
     (or (info :type :builtin u)
         (let ((spec (typexpand u)))
           (cond
@@ -603,7 +611,9 @@
            (t
             (when (and (atom spec)
                        (member spec '(and or not member eql satisfies values)))
-              (error "The symbol ~S is not valid as a type specifier." spec))
+              (type-parse-error
+               spec nil
+               "~@<The symbol ~S is not valid as a type specifier.~@:>" spec))
             (let* ((lspec (if (atom spec) (list spec) spec))
                    (fun (info :type :translator (car lspec))))
               (cond (fun
@@ -623,8 +633,9 @@
                      (return-from values-specifier-type
                        (make-unknown-type :specifier spec)))
                     (t
-                     (error "bad thing to be a type specifier: ~S"
-                            spec))))))))))
+                     (type-parse-error
+                      spec nil
+                      "~@<Bad thing to be a type specifier: ~S~@:>" spec))))))))))
 
 ;;; This is like VALUES-SPECIFIER-TYPE, except that we guarantee to
 ;;; never return a VALUES type.
@@ -634,7 +645,8 @@
               ;; bootstrap magic :-(
               (and (named-type-p res)
                    (eq (named-type-name res) '*)))
-      (error "VALUES type illegal in this context:~%  ~S" x))
+      (type-parse-error
+       x nil "~@<~S type illegal in this context.~@:>" 'values))
     res))
 
 (defun single-value-specifier-type (x)

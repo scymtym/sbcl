@@ -1097,6 +1097,8 @@ possibly temporariliy, because it might be used internally."
                "REFERENCE-CONDITION" "REFERENCE-CONDITION-REFERENCES"
                "*PRINT-CONDITION-REFERENCES*"
 
+               "TYPE-PARSE-ERROR" "TYPE-PARSE-ERROR-SPECIFIER"
+
                "DUPLICATE-DEFINITION" "DUPLICATE-DEFINITION-NAME"
                "PACKAGE-AT-VARIANCE"
                "PACKAGE-AT-VARIANCE-ERROR"

@@ -860,6 +860,7 @@
      (format stream ", ")
      (destructuring-bind (type data) (cdr reference)
        (ecase type
+         (:type (format stream "Type ~S" data))
          (:function (format stream "Function ~S" data))
          (:special-operator (format stream "Special Operator ~S" data))
          (:macro (format stream "Macro ~S" data))
@@ -898,6 +899,30 @@
 
 (define-condition simple-reference-warning (reference-condition simple-warning)
   ())
+
+(define-condition type-parse-error (reference-condition simple-error)
+  ((specifier :initarg  :specifier :reader type-parse-error-specifier))
+  (:report (lambda (condition stream)
+             (format stream "~@<Could not parse type specifier ~S~:[.~:;: ~_~:*~?~]~:>"
+                     (type-parse-error-specifier condition)
+                     (simple-condition-format-control condition)
+                     (simple-condition-format-arguments condition))))
+  (:default-initargs :references (list '(:ansi-cl :macro deftype)
+                                       '(:ansi-cl :glossary "type_specifier"))))
+
+(defun type-parse-error (specifier type &optional format-control &rest format-arguments)
+  (error 'type-parse-error
+         :specifier specifier
+         :format-control format-control
+         :format-arguments format-arguments
+         :references (list* '(:ansi-cl :macro deftype)
+                            '(:ansi-cl :glossary "type_specifier")
+                            (typecase type
+                              ((eql :recursive)
+                               '((:ansi-cl :issue "RECURSIVE-DEFTYPE:EXPLICITLY-VAGUE")
+                                 (:sbcl :node "Recursive Types")))
+                              ((and symbol (not null))
+                               `((:ansi-cl :type ,type)))))))
 
 (define-condition arguments-out-of-domain-error
     (arithmetic-error reference-condition)

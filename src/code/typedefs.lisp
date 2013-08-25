@@ -49,10 +49,21 @@
          (!cold-init-forms
           (let ((fun (lambda (,whole)
                        (block ,name
-                         (destructuring-bind ,wholeless-arglist
-                             (rest ,whole)  ; discarding NAME
-                           ,@decls
-                       ,@forms)))))
+                         (let ((in-body-p))
+                           (handler-bind
+                               ((error
+                                  (lambda (condition)
+                                    (unless in-body-p
+                                      (type-parse-error
+                                       ,whole ',name
+                                       "~@<Invalid arguments to ~S type ~
+                                        specifier: ~A~@:>"
+                                       ',name condition)))))
+                             (destructuring-bind ,wholeless-arglist
+                                 (rest ,whole) ; discarding NAME
+                               ,@decls
+                               (setf in-body-p t)
+                               ,@forms)))))))
             #-sb-xc-host
             (setf (%simple-fun-arglist (the simple-fun fun)) ',wholeless-arglist)
             (setf (info :type :translator ',name) fun)))

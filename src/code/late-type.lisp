@@ -380,15 +380,16 @@
                              :allowp allowp
                              :returns result))))))
 
-(!def-type-translator values (&rest values)
+(!def-type-translator values (&whole whole &rest values)
   (if (eq values '*)
       *wild-type*
       (multiple-value-bind (required optional rest keyp keywords allowp llk-p)
           (parse-args-types values)
         (declare (ignore keywords))
         (cond (keyp
-               (error "&KEY appeared in a VALUES type specifier ~S."
-                      `(values ,@values)))
+               (type-parse-error
+                whole nil
+                "~@<~S appeared in a ~S type specifier.~@:>" '&key 'values))
               (llk-p
                (make-values-type :required required
                                  :optional optional
@@ -1461,7 +1462,7 @@
   (destructuring-bind (satisfies predicate-name) whole
     (declare (ignore satisfies))
     (unless (symbolp predicate-name)
-      (error 'simple-type-error
+      (error 'simple-type-error ; TODO(jmoringe): use type-parse-error?
              :datum predicate-name
              :expected-type 'symbol
              :format-control "The SATISFIES predicate name is not a symbol: ~S"
@@ -1984,15 +1985,19 @@
   (setf (info :type :builtin 'number)
         (make-numeric-type :complexp nil)))
 
-(!def-type-translator complex (&optional (typespec '*))
+(!def-type-translator complex (&whole whole &optional (typespec '*))
   (if (eq typespec '*)
       (specifier-type '(complex real))
       (labels ((not-numeric ()
-                 (error "The component type for COMPLEX is not numeric: ~S"
-                        typespec))
+                 (type-parse-error
+                  whole t
+                  "~@<The component type for ~S is not numeric: ~S~@:>"
+                  'complex typespec))
                (not-real ()
-                 (error "The component type for COMPLEX is not a subtype of REAL: ~S"
-                        typespec))
+                 (type-parse-error
+                  whole t
+                  "~@<The component type for ~S is not a subtype of ~S: ~S~@:>"
+                  'complex 'real typespec))
                (complex1 (component-type)
                  (unless (numeric-type-p component-type)
                    (not-numeric))
@@ -2051,7 +2056,7 @@ used for a COMPLEX component.~:@>"
 ;;; If X is *, return NIL, otherwise return the bound, which must be a
 ;;; member of TYPE or a one-element list of a member of TYPE.
 #!-sb-fluid (declaim (inline canonicalized-bound))
-(defun canonicalized-bound (bound type)
+(defun canonicalized-bound (bound type whole)
   (cond ((eq bound '*) nil)
         ((or (sb!xc:typep bound type)
              (and (consp bound)
@@ -2059,16 +2064,15 @@ used for a COMPLEX component.~:@>"
                   (null (cdr bound))))
           bound)
         (t
-         (error "Bound is not ~S, a ~S or a list of a ~S: ~S"
-                '*
-                type
-                type
-                bound))))
+         (type-parse-error
+          whole type
+          "~@<Bound is not ~S, a ~S or a list of a ~:*~S: ~S~@:>"
+          '* type bound))))
 
-(!def-type-translator integer (&optional (low '*) (high '*))
-  (let* ((l (canonicalized-bound low 'integer))
+(!def-type-translator integer (&whole whole &optional (low '*) (high '*))
+  (let* ((l (canonicalized-bound low 'integer whole))
          (lb (if (consp l) (1+ (car l)) l))
-         (h (canonicalized-bound high 'integer))
+         (h (canonicalized-bound high 'integer whole))
          (hb (if (consp h) (1- (car h)) h)))
     (if (and hb lb (< hb lb))
         *empty-type*
@@ -2079,9 +2083,9 @@ used for a COMPLEX component.~:@>"
                          :high hb))))
 
 (defmacro !def-bounded-type (type class format)
-  `(!def-type-translator ,type (&optional (low '*) (high '*))
-     (let ((lb (canonicalized-bound low ',type))
-           (hb (canonicalized-bound high ',type)))
+  `(!def-type-translator ,type (&whole whole &optional (low '*) (high '*))
+     (let ((lb (canonicalized-bound low ',type whole))
+           (hb (canonicalized-bound high ',type whole)))
        (if (not (numeric-bound-test* lb hb <= <))
            *empty-type*
          (make-numeric-type :class ',class
@@ -2637,27 +2641,38 @@ used for a COMPLEX component.~:@>"
 
 ;;; Check a supplied dimension list to determine whether it is legal,
 ;;; and return it in canonical form (as either '* or a list).
-(defun canonical-array-dimensions (dims)
+(defun canonical-array-dimensions (dims whole)
   (typecase dims
     ((member *) dims)
     (integer
      (when (minusp dims)
-       (error "Arrays can't have a negative number of dimensions: ~S" dims))
+       (type-parse-error
+        whole 'array
+        "~@<Arrays can't have a negative number of dimensions: ~S.~@:>" dims))
      (when (>= dims sb!xc:array-rank-limit)
-       (error "array type with too many dimensions: ~S" dims))
+       (type-parse-error
+        whole 'array
+        "~@<Array type with too many dimensions: ~S.~@:>" dims))
      (make-list dims :initial-element '*))
     (list
      (when (>= (length dims) sb!xc:array-rank-limit)
-       (error "array type with too many dimensions: ~S" dims))
+       (type-parse-error
+        whole 'array
+        "~@<Array type with too many dimensions: ~S.~@:>" dims))
      (dolist (dim dims)
-       (unless (eq dim '*)
-         (unless (and (integerp dim)
-                      (>= dim 0)
-                      (< dim sb!xc:array-dimension-limit))
-           (error "bad dimension in array type: ~S" dim))))
+       (unless (or (eq dim '*)
+                   (and (integerp dim)
+                        (>= dim 0)
+                        (< dim sb!xc:array-dimension-limit)))
+         (type-parse-error
+          whole 'array
+          "~@<Bad dimension in array type: ~S.~@:>" dim)))
      dims)
     (t
-     (error "Array dimensions is not a list, integer or *:~%  ~S" dims))))
+     (type-parse-error
+      whole 'array
+      "~@<Array dimensions is not a ~S, ~S or ~S: ~S.~@:>"
+      'list 'integer '* dims))))
 
 ;;;; MEMBER types
 
@@ -3477,19 +3492,21 @@ used for a COMPLEX component.~:@>"
                    y-mem)))))
           (apply #'type-union (res))))))
 
-(!def-type-translator array (&optional (element-type '*)
+(!def-type-translator array (&whole whole
+                             &optional (element-type '*)
                                        (dimensions '*))
   (specialize-array-type
-   (make-array-type :dimensions (canonical-array-dimensions dimensions)
+   (make-array-type :dimensions (canonical-array-dimensions dimensions whole)
                     :complexp :maybe
                     :element-type (if (eq element-type '*)
                                       *wild-type*
                                       (specifier-type element-type)))))
 
-(!def-type-translator simple-array (&optional (element-type '*)
+(!def-type-translator simple-array (&whole whole
+                                    &optional (element-type '*)
                                               (dimensions '*))
   (specialize-array-type
-   (make-array-type :dimensions (canonical-array-dimensions dimensions)
+   (make-array-type :dimensions (canonical-array-dimensions dimensions whole)
                     :complexp nil
                     :element-type (if (eq element-type '*)
                                       *wild-type*
