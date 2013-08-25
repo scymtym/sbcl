@@ -287,7 +287,7 @@
 ;;; currently just drop through to the general code in this case,
 ;;; rather than trying to optimize it (but FIXME CSR 2004-04-05: it
 ;;; wouldn't be hard to optimize it after all).
-(defun source-transform-union-typep (object type)
+(defun source-transform-union-typep (object type &optional recursive)
   (let* ((types (union-type-types type))
          (type-cons (specifier-type 'cons))
          (mtype (find-if #'member-type-p types))
@@ -304,7 +304,9 @@
                         (member ,@(remove nil members))))))
         (once-only ((n-obj object))
           `(or ,@(mapcar (lambda (x)
-                           `(typep ,n-obj ',(type-specifier x)))
+                           (if recursive
+                               (source-transform-typep n-obj x)
+                               `(typep ,n-obj ',(type-specifier x))))
                          types))))))
 
 ;;; Do source transformation for TYPEP of a known intersection type.
@@ -315,21 +317,33 @@
                     (intersection-type-types type)))))
 
 ;;; If necessary recurse to check the cons type.
-(defun source-transform-cons-typep (object type)
+(defun source-transform-cons-typep (object type &optional recursive)
   (let* ((car-type (cons-type-car-type type))
          (cdr-type (cons-type-cdr-type type)))
-    (let ((car-test-p (not (type= car-type *universal-type*)))
-          (cdr-test-p (not (type= cdr-type *universal-type*))))
-      (if (and (not car-test-p) (not cdr-test-p))
+    (let ((car-test (cond ((type= car-type *universal-type*) nil)
+                          ((and recursive (recursive-type-p car-type))
+                           :recursive)
+                          (t t)))
+          (cdr-test (cond ((type= cdr-type *universal-type*) nil)
+                          ((and recursive (recursive-type-p cdr-type))
+                           :recursive)
+                          (t t))))
+      (if (and (not car-test) (not cdr-test))
           `(consp ,object)
           (once-only ((n-obj object))
             `(and (consp ,n-obj)
-                  ,@(if car-test-p
-                        `((typep (car ,n-obj)
-                                 ',(type-specifier car-type))))
-                  ,@(if cdr-test-p
-                        `((typep (cdr ,n-obj)
-                                 ',(type-specifier cdr-type))))))))))
+                  ,@(case car-test
+                      (:recursive
+                       (list (source-transform-typep `(car ,n-obj) car-type)))
+                      ((t)
+                       `((typep (car ,n-obj)
+                                ',(type-specifier car-type)))))
+                  ,@(case cdr-test
+                      (:recursive
+                       (list (source-transform-typep `(cdr ,n-obj) cdr-type)))
+                      ((t)
+                       `((typep (cdr ,n-obj)
+                                ',(type-specifier cdr-type)))))))))))
 
 (defun source-transform-character-set-typep (object type)
   (let ((pairs (character-set-type-pairs type)))
@@ -590,48 +604,65 @@
 ;;; to that predicate. Otherwise, we dispatch off of the type's type.
 ;;; These transformations can increase space, but it is hard to tell
 ;;; when, so we ignore policy and always do them.
+(defvar *source-transform-typep-recursive-tests* '())
 (defun source-transform-typep (object type)
-  (let ((ctype (careful-specifier-type type)))
-    (or (when (not ctype)
-          (compiler-warn "illegal type specifier for TYPEP: ~S" type)
-          (return-from source-transform-typep (values nil t)))
-        (multiple-value-bind (constantp value) (type-singleton-p ctype)
-          (and constantp
-               `(eql ,object ',value)))
-        (let ((pred (cdr (assoc ctype *backend-type-predicates*
-                                :test #'type=))))
-          (when pred `(,pred ,object)))
-        (typecase ctype
-          (hairy-type
-           (source-transform-hairy-typep object ctype))
-          (negation-type
-           (source-transform-negation-typep object ctype))
-          (union-type
-           (source-transform-union-typep object ctype))
-          (intersection-type
-           (source-transform-intersection-typep object ctype))
-          (member-type
-           `(if (member ,object ',(member-type-members ctype)) t))
-          (args-type
-           (compiler-warn "illegal type specifier for TYPEP: ~S" type)
-           (return-from source-transform-typep (values nil t)))
-          (t nil))
-        (typecase ctype
-          (numeric-type
-           (source-transform-numeric-typep object ctype))
-          (classoid
-           `(%instance-typep ,object ',type))
-          (array-type
-           (source-transform-array-typep object ctype))
-          (cons-type
-           (source-transform-cons-typep object ctype))
-          (character-set-type
-           (source-transform-character-set-typep object ctype))
-          #!+sb-simd-pack
-          (simd-pack-type
-           (source-transform-simd-pack-typep object ctype))
-          (t nil))
-        `(%typep ,object ',type))))
+  (let ((ctype (if (typep type 'ctype)
+                   type
+                   (careful-specifier-type type))))
+    (when (not ctype)
+      (compiler-warn "illegal type specifier for TYPEP: ~S" type)
+      (return-from source-transform-typep (values nil t)))
+    (flet ((do-it (&optional (object object) recursive)
+             (or (multiple-value-bind (constantp value) (type-singleton-p ctype)
+                   (and constantp `(eql ,object ',value)))
+                 (let ((pred (cdr (assoc ctype *backend-type-predicates*
+                                         :test #'type=))))
+                   (when pred `(,pred ,object)))
+                 (typecase ctype
+                   (hairy-type
+                    (source-transform-hairy-typep object ctype))
+                   (negation-type
+                    (source-transform-negation-typep object ctype))
+                   (union-type
+                    (source-transform-union-typep object ctype recursive))
+                   (intersection-type
+                    (source-transform-intersection-typep object ctype))
+                   (member-type
+                    `(if (member ,object ',(member-type-members ctype)) t))
+                   (args-type
+                    (compiler-warn "illegal type specifier for TYPEP: ~S" type)
+                    (return-from source-transform-typep (values nil t))))
+                 (typecase ctype
+                   (numeric-type
+                    (source-transform-numeric-typep object ctype))
+                   (classoid
+                    `(%instance-typep ,object ',type))
+                   (array-type
+                    (source-transform-array-typep object ctype))
+                   (cons-type
+                    (source-transform-cons-typep object ctype recursive))
+                   (character-set-type
+                    (source-transform-character-set-typep object ctype))
+                   #!+sb-simd-pack
+                   (simd-pack-type
+                    (source-transform-simd-pack-typep object ctype)))
+                 `(%typep ,object ',type))))
+      (cond
+        ((awhen (assoc ctype *source-transform-typep-recursive-tests*
+                       :test #'type=)
+           (destructuring-bind (ctype . test) it
+             (declare (ignore ctype))
+             `(,test ,object))))
+        ((not (recursive-type-p ctype))
+         (do-it))
+        (t
+         (with-unique-names (name object*)
+           (let  ((*source-transform-typep-recursive-tests*
+                    (cons (cons ctype name) *source-transform-typep-recursive-tests*)))
+             `(labels ((,name (,object*)
+                         ,(do-it object* t)))
+                (declare (dynamic-extent #',name))
+                (,name ,object)))))))))
 
 (define-source-transform typep (object spec &optional env)
   ;; KLUDGE: It looks bad to only do this on explicitly quoted forms,

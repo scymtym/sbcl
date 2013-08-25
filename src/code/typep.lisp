@@ -31,8 +31,13 @@
            (if (ctype-p specifier)
                specifier
                (specifier-type specifier))))
-(defun %%typep (object type &optional (strict t))
+
+(defun %%typep (object type &optional (strict t) seen)
   (declare (type ctype type))
+  ;; TODO explain
+  (when (find object (remove type seen :test #'neq :key #'cdr)
+              :test #'eq :key #'car)
+    (return-from %%typep t))
   (etypecase type
     (named-type
      (ecase (named-type-name type)
@@ -118,9 +123,11 @@
               (%%typep object intersection-type-type strict))
             (intersection-type-types type)))
     (cons-type
-     (and (consp object)
-          (%%typep (car object) (cons-type-car-type type) strict)
-          (%%typep (cdr object) (cons-type-cdr-type type) strict)))
+     (when (consp object)
+       (let ((seen ;; TODO maybe worth checking type-recursive-p?
+               (list* (cons object type) seen)))
+         (and (%%typep (car object) (cons-type-car-type type) strict seen)
+              (%%typep (cdr object) (cons-type-cdr-type type) strict seen)))))
     #!+sb-simd-pack
     (simd-pack-type
      (and (simd-pack-p object)
@@ -145,16 +152,16 @@
        (if (typep reparse 'unknown-type)
            (error "unknown type specifier: ~S"
                   (unknown-type-specifier reparse))
-           (%%typep object reparse strict))))
+           (%%typep object reparse strict seen))))
     (negation-type
-     (not (%%typep object (negation-type-type type) strict)))
+     (not (%%typep object (negation-type-type type) strict seen)))
     (hairy-type
      ;; Now the tricky stuff.
      (let* ((hairy-spec (hairy-type-specifier type))
             (symbol (car hairy-spec)))
        (ecase symbol
          (and
-          (every (lambda (spec) (%%typep object (specifier-type spec) strict))
+          (every (lambda (spec) (%%typep object (specifier-type spec) strict seen))
                  (rest hairy-spec)))
          ;; Note: it should be safe to skip OR here, because union
          ;; types can always be represented as UNION-TYPE in general
@@ -163,7 +170,7 @@
          (not
           (unless (proper-list-of-length-p hairy-spec 2)
             (error "invalid type specifier: ~S" hairy-spec))
-          (not (%%typep object (specifier-type (cadr hairy-spec)) strict)))
+          (not (%%typep object (specifier-type (cadr hairy-spec)) strict seen)))
          (satisfies
           (unless (proper-list-of-length-p hairy-spec 2)
             (error "invalid type specifier: ~S" hairy-spec))

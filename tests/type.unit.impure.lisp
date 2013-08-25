@@ -181,3 +181,98 @@
     (test (type=.list-of-length 0)            (type=.list-of-length 0)            t)
     (test (type=.list-of-length 1)            (type=.list-of-length 1)            t)
     #+no (test (type=.list-of-length 1024)         (type=.list-of-length 1024)         t)))
+
+#+no (defun g ()
+  (sb-kernel:type=
+   (sb-kernel:specifier-type '#1=(and (cons t string) (cons #1#)))
+   (sb-kernel:specifier-type '#2=(and (cons t string) (cons #2#)))))
+
+(sb-kernel::clear-type-caches)
+(defun g ()
+  (let ((sb-kernel::*break* t))
+   (sb-kernel:type=
+    (sb-kernel:specifier-type '#3=(or null (cons integer #3#)))
+    (sb-kernel:specifier-type '#4=(or null (cons integer #4#))))))
+
+#1=(cons integer (or null #1#))
+
+;;; TYPEP
+
+;; TODO test undefined types
+
+(deftype typep.proper-list (&optional (element-type t))
+  `(or null (cons ,element-type (typep.proper-list ,element-type))))
+
+(deftype typep.list-of-length (length)
+  (if (= 0 length)
+      'null
+      `(cons t (typep.list-of-length ,(- length 1)))))
+
+(with-test (:name (typep :valid-recursive-types))
+  (macrolet ((test (type object expected)
+               `(twice ; repeat to test caches
+                  (print ',type)
+                  (assert (eq ,expected (typep ,object ',type)))
+                  (assert (eq ,expected (eval '(typep ,object ',type)))))))
+    (test #1=(and (cons t string) (cons #1#)) nil                         nil)
+    (test #2=(and (cons t string) (cons #2#)) (cons 1 "foo")              nil)
+    (test #3=(and (cons t string) (cons #3#)) (cons (cons 1 "foo") "bar") nil)
+    (test #4=(and (cons t string) (cons #4#)) (let ((a (cons nil "bar")))
+                                                (setf (car a) a))         t)
+    ;; TODO more cases
+    (test #5=(or null (cons integer #5#))     1                           nil)
+    (test #6=(not (cons symbol #6#))          1                           nil)
+    (test typep.proper-list                   1                           nil)
+    (test (typep.proper-list integer)         1                           nil)
+    (test (typep.list-of-length 0)            1                           nil)
+    (test (typep.list-of-length 1)            1                           nil)
+    ;; TODO too slow
+    #+no (test (typep.list-of-length 1024)         1                           nil)))
+
+#+no (sb-kernel::clear-type-caches)
+(sb-kernel:specifier-type '(typep.proper-list t))
+(sb-c::careful-specifier-type '(typep.proper-list t))
+
+;; this works with patched %%TYPEP
+(let ((a (cons nil "bar")))
+  (setf (car a) a)
+  (sb-kernel::%%typep
+   a
+   (sb-kernel:specifier-type '#1=(and (cons t string) (cons #1#)))))
+
+(defun f ()
+  (let ((a (cons nil "bar")))
+    (setf (car a) a)
+    (typep a '#1=(and (cons t string) (cons #1#)))))
+
+(with-test (:name (typep :recursive-type :proper-list))
+  (macrolet ((test (element-type object expected) ; TODO eval and compile
+               `(assert (eq ,expected
+                            (typep ,object
+                                   `(typep.proper-list ,',element-type))))))
+    ;;    element-type          object    expected
+    (test t                     1          nil)
+    (test t                     "foo"      nil)
+    (test t                     '()        t)
+    (test t                     '(:a)      t)
+    (test t                     '(1)       t)
+
+    (test integer               1          nil)
+    (test integer               :foo       nil)
+    (test integer               '(:foo)    nil)
+    (test integer               '()        t)
+    (test integer               '(1)       t)
+    #+no (test integer               (make-list 100000 :initial-element 1) ; TODO too slow
+                                           t)
+
+    (test (or (eql :a) integer) 1          nil)
+    (test (or (eql :a) integer) :foo       nil)
+    (test (or (eql :a) integer) '(:foo)    nil)
+    (test (or (eql :a) integer) '(:a :foo) nil)
+    (test (or (eql :a) integer) '()        t)
+    (test (or (eql :a) integer) '(:a)      t)
+    (test (or (eql :a) integer) '(:a :a)   t)
+    (test (or (eql :a) integer) '(1)       t)
+    (test (or (eql :a) integer) '(1 1)     t)
+    (test (or (eql :a) integer) '(:a 1)    t)
+    (test (or (eql :a) integer) '(1 :a)    t)))
