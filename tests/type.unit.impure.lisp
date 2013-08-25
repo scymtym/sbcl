@@ -110,3 +110,44 @@
     (test (or . #1#))
     (test (not . #1#))
     (test (member . #2=(:foo . #2#)))))
+
+;; These type specifiers do not make sense.
+(with-test (:name (sb-kernel:specifier-type :invalid-recursive-types
+                                            :semantically-invalid))
+  (macrolet ((test (specifier)
+               `(twice ; repeat to test caches
+                  (assert (raises-error?
+                           (sb-kernel:specifier-type ',specifier)
+                           sb-int:type-parse-error)))))
+    (test #1=(and #1#))
+    (test #2=(and t . #2#))
+    (test #3=(or #3#))
+    (test #4=(or t . #4#))
+    (test #5=(not #5#))))
+
+;; Valid recursive types
+
+;; Produced /expansion/ is structurally recursive.
+(deftype specifier-type.proper-list (&optional (element-type t))
+  `(or null (cons ,element-type (proper-list ,element-type))))
+
+;; The /expansion process/ is recursive.
+(deftype specifier-type.list-of-length (length)
+  (if (= 0 length)
+      'null
+      `(cons t (list-of-length ,(- length 1)))))
+
+(with-test (:name (sb-kernel:specifier-type :valid-recursive-types))
+  (macrolet ((test (specifier expected-ctype)
+               `(twice ; repeat to test caches
+                  (assert (typep (sb-kernel:specifier-type ',specifier)
+                                 ',expected-ctype)))))
+    (test #1=(and (cons t string) (cons #1#))  sb-kernel:cons-type)
+    (test #2=(or null (cons integer #2#))      sb-kernel:union-type)
+    (test #3=(not (cons symbol #3#))           sb-kernel:union-type) ; TODO correct?
+    (test specifier-type.proper-list           sb-kernel:union-type)
+    (test (specifier-type.proper-list t)       sb-kernel:union-type)
+    (test (specifier-type.proper-list integer) sb-kernel:union-type)
+    (test (specifier-type.list-of-length 0)    sb-kernel:member-type)
+    (test (specifier-type.list-of-length 1)    sb-kernel:cons-type)
+    (test (specifier-type.list-of-length 1024) sb-kernel:cons-type)))

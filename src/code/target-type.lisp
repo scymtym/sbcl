@@ -36,7 +36,8 @@
          character-set-type
          built-in-classoid
          cons-type
-         #!+sb-simd-pack simd-pack-type)
+         #!+sb-simd-pack simd-pack-type
+         back-edge) ; only used during type graph construction
      (values (%typep obj type) t))
     (classoid
      (if (if (csubtypep type (specifier-type 'function))

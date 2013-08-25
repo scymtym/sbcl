@@ -127,6 +127,8 @@
           (let* ((tag (%simd-pack-tag object))
                  (name (nth tag *simd-pack-element-types*)))
             (not (not (member name (simd-pack-type-element-type type)))))))
+    (back-edge ; only used during type graph construction
+     (values nil t))
     (character-set-type
      (and (characterp object)
          (let ((code (char-code object))

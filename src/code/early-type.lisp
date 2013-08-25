@@ -62,6 +62,8 @@
                                     (might-contain-other-types-p t))
                           (:copier nil)
                           #!+cmu (:pure nil))
+  ;; This slot has to be mutated when building recursive types and
+  ;; thus cannot be :READ-ONLY.
   (type (missing-arg) :type ctype))
 
 (!define-type-class negation)
@@ -459,7 +461,9 @@
                                     (might-contain-other-types-p t))
                           (:constructor nil)
                           (:copier nil))
-  (types nil :type list :read-only t))
+  ;; This slot has to be mutated when building recursive types and
+  ;; thus cannot be :READ-ONLY.
+  (types nil :type list))
 
 ;;; A UNION-TYPE represents a use of the OR type specifier which we
 ;;; couldn't canonicalize to something simpler. Canonical form:
@@ -503,15 +507,15 @@
 
 ;;; A CONS-TYPE is used to represent a CONS type.
 (defstruct (cons-type (:include ctype (class-info (type-class-or-lose 'cons)))
-                      (:constructor
-                       %make-cons-type (car-type
-                                        cdr-type))
+                      (:constructor %make-cons-type (car-type cdr-type))
                       (:copier nil))
-  ;; the CAR and CDR element types (to support ANSI (CONS FOO BAR) types)
+  ;; The CAR and CDR element types (to support ANSI (CONS FOO BAR)
+  ;; types).
   ;;
-  ;; FIXME: Most or all other type structure slots could also be :READ-ONLY.
-  (car-type (missing-arg) :type ctype :read-only t)
-  (cdr-type (missing-arg) :type ctype :read-only t))
+  ;; These slots have to be mutated when building recursive types and
+  ;; thus cannot be :READ-ONLY.
+  (car-type (missing-arg) :type ctype)
+  (cdr-type (missing-arg) :type ctype))
 (defun make-cons-type (car-type cdr-type)
   (aver (not (or (eq car-type *wild-type*)
                  (eq cdr-type *wild-type*))))
@@ -577,65 +581,193 @@
            (return (list pack-type)))))))
 
 
-;;;; type utilities
+;;;; recursive types
+;;;;
+;;;; Detect invalid recursive compound and negation types such as
+;;;;
+;;;;   #1=(and #1# ...)
+;;;;   #1=(or #1# ...)
+;;;;   #1=(not #1#)
+
+(defun valid-recursive-type-p (type)
+  (typecase type
+    ;; Happens when a recursive type such as #1=(AND #1#) is
+    ;; simplified to just a BACK-EDGE pointing to itself.
+    (back-edge
+     nil)
+    (negation-type
+     (neq type (negation-type-type type)))
+    (compound-type
+     (not (member type (compound-type-types type))))
+    (t t)))
+
+(defun check-recursive-type (type specifier unexpanded)
+  (unless (valid-recursive-type-p type)
+    (type-parse-error
+     specifier :recursive
+     "~@<Recursive compound or negation type ~S.~@:>" unexpanded)))
+
+
+;;;; back edge handling
+;;;;
+;;;; When parsing type specifiers and structurally recursive
+;;;; occurrences of type specifiers are detected, SPECIFIER-TYPE
+;;;; inserts BACK-EDGE objects pointing to the "outer" occurrences
+;;;; into the CTYPE graph being constructed.
+;;;;
+;;;; In a second pass, NORMALIZE-RECURSIVE-TYPE replaces these objects
+;;;; with the actual outer CTYPE node by destructively modifying the
+;;;; respective containing node.
+
+;; Temporary marker for back edges; used during CTYPE graph
+;; construction.
+(defstruct (back-edge (:include hairy-type)
+                      (:copier nil))
+  ;; First nil, then potentially modified to point to "outer"
+  ;; occurrence of an structurally recursive type graph node. See
+  ;; SPECIFIER-TYPE for details.
+  (target nil :type (or null ctype)))
+
+(defun normalize-recursive-type (type)
+  (labels ((rec (type)
+             (typecase type
+               (back-edge ; replace BACK-EDGE node with its pointee
+                (back-edge-target type))
+               (negation-type ; update potentially changed inner type
+                (setf (negation-type-type type)
+                      (rec (negation-type-type type))))
+               (compound-type ; likewise
+                (setf (compound-type-types type)
+                      (mapcar #'rec (compound-type-types type)))
+                type)
+               (cons-type ; likewise
+                (setf (cons-type-car-type type)
+                      (rec (cons-type-car-type type))
+                      (cons-type-cdr-type type)
+                      (rec (cons-type-cdr-type type)))
+                type)
+               (t
+                type))))
+    (rec type)))
 
 ;;; Return the type structure corresponding to a type specifier. We
 ;;; pick off structure types as a special case.
 ;;;
 ;;; Note: VALUES-SPECIFIER-TYPE-CACHE-CLEAR must be called whenever a
 ;;; type is defined (or redefined).
+(defun expanded-specifier-type (spec unexpanded)
+  (cond
+    ;; UNEXPANDED TYPEEXPANDed and is a builtin type => return the
+    ;; builtin type.
+    ((and (not (eq spec unexpanded))
+          (info :type :builtin spec)))
+    ;; UNEXPANDED's CAR is a builtin type.
+    ((and (consp spec) (symbolp (car spec)) ; TODO typep
+          (info :type :builtin (car spec))
+          (let ((expander (info :type :expander (car spec))))
+            (and expander (values-specifier-type (funcall expander spec))))))
+    ;; SPEC /names/ a class.
+    ((eq (info :type :kind spec) :instance)
+     (find-classoid spec))
+    ;; SPEC /is/ a class.
+    ((typep spec 'classoid)
+     (cond
+       ((not (typep spec 'built-in-classoid)) spec)
+       ((built-in-classoid-translation spec))
+       (t spec)))
+    ;; SPEC is a symbol which cannot be used as a type name.
+    ((member spec '(and or not member eql satisfies values))
+     (type-parse-error
+      spec nil
+      "~@<The symbol ~S is not valid as a type specifier.~@:>" spec))
+    ;; Otherwise, try to find and use a type translator for SPEC.
+    (t
+     (let* ((lspec (if (atom spec) (list spec) spec)) ; ensure-list
+            (fun (info :type :translator (first lspec))))
+       (cond (fun
+              (funcall fun lspec))
+             ((or (and (consp spec) (symbolp (car spec))
+                       (not (info :type :builtin (car spec))))
+                  (and (symbolp spec) (not (info :type :builtin spec))))
+              (values (make-unknown-type :specifier spec) t))
+             (t
+              (type-parse-error
+               spec nil
+               "~@<Bad thing to be a type specifier: ~S~@:>" spec)))))))
+
 (defun-cached (values-specifier-type
                :hash-function (lambda (x)
                                 (logand (sxhash x) #x3FF))
                :hash-bits 10
                :init-wrapper !cold-init-forms)
               ((orig equal-but-no-car-recursion))
-  (let ((u (uncross orig)))
-    (unless (typep u 'type-specifier)
-      (type-parse-error u nil "~@<Not a type specifier.~@:>"))
-    (or (info :type :builtin u)
-        (let ((spec (typexpand u)))
-          (cond
-           ((and (not (eq spec u))
-                 (info :type :builtin spec)))
-           ((and (consp spec) (symbolp (car spec))
-                 (info :type :builtin (car spec))
-                 (let ((expander (info :type :expander (car spec))))
-                   (and expander (values-specifier-type (funcall expander spec))))))
-           ((eq (info :type :kind spec) :instance)
-            (find-classoid spec))
-           ((typep spec 'classoid)
-            (if (typep spec 'built-in-classoid)
-                (or (built-in-classoid-translation spec) spec)
-                spec))
-           (t
-            (when (and (atom spec)
-                       (member spec '(and or not member eql satisfies values)))
-              (type-parse-error
-               spec nil
-               "~@<The symbol ~S is not valid as a type specifier.~@:>" spec))
-            (let* ((lspec (if (atom spec) (list spec) spec))
-                   (fun (info :type :translator (car lspec))))
-              (cond (fun
-                     (funcall fun lspec))
-                    ((or (and (consp spec) (symbolp (car spec))
-                              (not (info :type :builtin (car spec))))
-                         (and (symbolp spec) (not (info :type :builtin spec))))
-                     (when (and *type-system-initialized*
-                                (not (eq (info :type :kind spec)
-                                         :forthcoming-defclass-type)))
-                       (signal 'parse-unknown-type :specifier spec))
-                     ;; (The RETURN-FROM here inhibits caching; this
-                     ;; does not only make sense from a compiler
-                     ;; diagnostics point of view but is also
-                     ;; indispensable for proper workingness of
-                     ;; VALID-TYPE-SPECIFIER-P.)
-                     (return-from values-specifier-type
-                       (make-unknown-type :specifier spec)))
-                    (t
-                     (type-parse-error
-                      spec nil
-                      "~@<Bad thing to be a type specifier: ~S~@:>" spec))))))))))
+  (block nil
+    (flet ((uncross-and-expand (spec)
+             (let ((unexpanded (uncross spec)))
+               (unless (typep unexpanded 'type-specifier)
+                 (type-parse-error unexpanded nil "~@<Not a type specifier.~@:>"))
+               (awhen (info :type :builtin unexpanded)
+                 (return it))
+               ;; TODO(jmoringe): can we avoid the KLUDGE below?
+               ;; KLUGDE: this seems to be called early in cold init
+               ;; when *HANDLER-CLUSTERS* is still unbound
+               (if (not (boundp '*handler-clusters*))
+                   (values (typexpand unexpanded) unexpanded)
+                   (handler-bind
+                       ((error (lambda (condition)
+                                 (type-parse-error
+                                  unexpanded nil
+                                  "~@<Failed to expand type specifier: ~A.~@:>"
+                                  condition))))
+                     (values (typexpand unexpanded) unexpanded)))))
+           (maybe-back-edge (spec)
+             (let ((cell (assoc spec *translator-seen* :test #'equal)))
+               (cond
+                 ((not cell)
+                  spec)
+                 ((null (cdr cell))
+                  ;; RETURN-FROM here inhibits caching. We do not want
+                  ;; BACK-EDGE instances to be cached. Since we can
+                  ;; only get here when parsing a recursive type, the
+                  ;; "outer" occurrence of the recursive type can be
+                  ;; cached.
+                  (return-from values-specifier-type
+                    (setf (cdr cell) (make-back-edge :specifier spec))))
+                 ((cdr cell)
+                  (return-from values-specifier-type
+                    (cdr cell)))))))
+      (multiple-value-bind (expanded unexpanded) (uncross-and-expand orig)
+        (let* ((spec (maybe-back-edge expanded))
+               (cell (cons spec nil))
+               (*translator-seen* (list* cell *translator-seen*)))
+          (multiple-value-bind (result unknown-p)
+              (expanded-specifier-type spec unexpanded)
+            ;; TODO explain
+            (when (cdr cell)
+              ;; TODO explain
+              (setf (back-edge-target (cdr cell)) result)
+              ;;
+              (setf result (normalize-recursive-type result))
+              ;; If RESULT turns out to be an invalid recursive type,
+              ;; signal an error and clear the cache to flush any
+              ;; partial results produced while parsing RESULT.
+              (handler-bind ((error (lambda (condition)
+                                      (declare (ignore condition))
+                                      (values-specifier-type-cache-clear))))
+                (check-recursive-type result spec unexpanded)))
+            ;; Handle unknown types.
+            (when unknown-p
+              (when (and *type-system-initialized*
+                         (not (eq (info :type :kind spec)
+                                  :forthcoming-defclass-type)))
+                (signal 'parse-unknown-type :specifier spec))
+              ;; (The RETURN-FROM here inhibits caching; this does not
+              ;; only make sense from a compiler diagnostics point of
+              ;; view but is also indispensable for proper workingness
+              ;; of VALID-TYPE-SPECIFIER-P.)
+              (return-from values-specifier-type
+                result))
+            result))))))
 
 ;;; This is like VALUES-SPECIFIER-TYPE, except that we guarantee to
 ;;; never return a VALUES type.

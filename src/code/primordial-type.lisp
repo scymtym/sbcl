@@ -21,6 +21,10 @@
 (defvar *funcallable-instance-type*)
 (defvar *extended-sequence-type*)
 
+;; TODO(jmoringe): note for reviewer: I put this before
+;; SPECIFIER-TYPE, but that did not work. I don't know why.
+(defvar *translator-seen* '())
+
 ;;; a vector that maps type codes to layouts, used for quickly finding
 ;;; the layouts of built-in classes
 (defvar *built-in-class-codes*) ; initialized in cold load

@@ -979,9 +979,14 @@
 
 ;;; Return a Common Lisp type specifier corresponding to the TYPE
 ;;; object.
+(defvar *type-specifier-seen* '())
 (defun type-specifier (type)
   (declare (type ctype type))
-  (funcall (type-class-unparse (type-class-info type)) type))
+  (or (cdr (assoc type *type-specifier-seen* :test #'type=))
+      (let* ((cell (list 'and nil))
+             (*type-specifier-seen* (cons (cons type cell) *type-specifier-seen*))
+             (result (funcall (type-class-unparse (type-class-info type)) type)))
+        (setf (second cell) result))))
 
 (defun-cached (type-negation :hash-function (lambda (type)
                                               (logand (type-hash-value type)
