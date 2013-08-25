@@ -650,19 +650,23 @@
       (cond
         ((awhen (assoc ctype *source-transform-typep-recursive-tests*
                        :test #'type=)
-           (destructuring-bind (ctype . test) it
+           (destructuring-bind (ctype test seen) it
              (declare (ignore ctype))
-             `(,test ,object))))
+             `(,test ,object ,seen))))
         ((not (recursive-type-p ctype))
          (do-it))
         (t
-         (with-unique-names (name object*)
+         (with-unique-names (name object* seen)
            (let  ((*source-transform-typep-recursive-tests*
-                    (cons (cons ctype name) *source-transform-typep-recursive-tests*)))
-             `(labels ((,name (,object*)
-                         ,(do-it object* t)))
+                    (list* (list ctype name seen)
+                           *source-transform-typep-recursive-tests*)))
+             `(labels ((,name (,object* ,seen)
+                         (or (find ,object* ,seen :test #'eq)
+                             (let ((,seen (list* ,object* ,seen)))
+                               (declare (ignorable ,seen))
+                               ,(do-it object* t)))))
                 (declare (dynamic-extent #',name))
-                (,name ,object)))))))))
+                (,name ,object '())))))))))
 
 (define-source-transform typep (object spec &optional env)
   ;; KLUDGE: It looks bad to only do this on explicitly quoted forms,
