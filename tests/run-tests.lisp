@@ -284,3 +284,39 @@
                      skipcount)))
           (t
            (format target "All tests succeeded~%")))))
+
+(defun write-universal-time/iso (&optional (time (get-universal-time))
+                                           (stream t))
+  (multiple-value-bind
+        (second minute hour date month year day-of-week dst-p tz)
+      (decode-universal-time time)
+    (declare (ignore day-of-week dst-p))
+    (format stream "~4,'0D-~2,'0D-~2,'0DT~2,'0d:~2,'0d:~2,'0d~@D:00"
+            year
+            month
+            date
+            hour
+            minute
+            second
+            (- tz))))
+
+(defmethod report-using-style (results (style (eql :sexp)) (target stream))
+  (flet ((one-result (result)
+           (with-accessors ((file result-file) (name result-name)
+                            (status result-status) (condition result-condition)) result
+             `(:file ,(enough-namestring file)
+               :test ,name
+               :status ,status
+               ,@(when (eq status :unexpected-failure)
+                   `(:condition ,(prin1-to-string condition)))))))
+    (let ((time (get-universal-time)))
+      (write-string "; Timestamp: " target)
+      (write-universal-time/iso time target)
+      (print
+       `(:timestamp ,time
+         :implementation-version ,(lisp-implementation-version)
+         :machine-type ,(machine-type)
+         :machine-instance ,(machine-instance)
+         :features ,*features*
+         :results ,(mapcar #'one-result results))
+       target))))

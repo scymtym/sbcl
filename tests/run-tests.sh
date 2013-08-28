@@ -13,7 +13,7 @@
 #                                the test report.
 #  --report-style STYLE          Name of the style that should be used
 #                                to format test results. Supported
-#                                STYLEs: describe.
+#                                STYLEs: describe, sexp.
 #  --report-target TARGET        Controls where the test result report
 #                                should go. When supplied, TARGET is
 #                                treated as the name of a file into
