@@ -18,21 +18,38 @@
 
 (defvar *all-results* nil)
 (defvar *break-on-error* nil)
-(defvar *report-skipped-tests* nil)
 (defvar *accept-files* nil)
+(defvar *report-skipped-tests* nil)
+(defvar *report-style* :describe)
+(defvar *report-target* *standard-output*)
 
 (defun run-all ()
-  (dolist (arg (cdr *posix-argv*))
-    (cond ((string= arg "--break-on-failure")
-           (setf *break-on-error* t)
-           (setf test-util:*break-on-failure* t))
-          ((string= arg "--break-on-expected-failure")
-           (setf test-util:*break-on-expected-failure* t))
-          ((string= arg "--report-skipped-tests")
-           (setf *report-skipped-tests* t))
-          ((string= arg "--no-color"))
-          (t
-           (push (truename (parse-namestring arg)) *accept-files*))))
+  (let ((args (rest *posix-argv*)))
+    (do ((arg (pop args) (pop args)))
+        ((null arg))
+      (cond ((string= arg "--break-on-failure")
+             (setf *break-on-error* t)
+             (setf test-util:*break-on-failure* t))
+            ((string= arg "--break-on-expected-failure")
+             (setf test-util:*break-on-expected-failure* t))
+            ((string= arg "--report-skipped-tests")
+             (setf *report-skipped-tests* t))
+            ((string= arg "--report-style")
+             (let* ((name (or (pop args)
+                              (error "~@<Missing argument for ~A option.~@:>"
+                                     arg)))
+                    (style (intern (string-upcase name) :keyword)))
+               (setf *report-style* style)))
+            ((string= arg "--report-target")
+             (setf *report-target*
+                   (or (pop args)
+                       (error "~@<Missing argument for ~A option.~@:>"
+                              arg))))
+            ((string= arg "--report-skipped-tests")
+             (setf *report-skipped-tests* t))
+            ((string= arg "--no-color"))
+            (t
+             (push (truename (parse-namestring arg)) *accept-files*)))))
   (pure-runner (pure-load-files) #'load-test)
   (pure-runner (pure-cload-files) #'cload-test)
   (impure-runner (impure-load-files) #'load-test)
@@ -42,52 +59,6 @@
   (sb-ext:exit :code (if (unexpected-failures *all-results*)
                          1
                          104)))
-
-(defun report (results)
-  (terpri t)
-  (format t "Finished running tests.~%")
-  (let ((skipcount 0)
-        (*print-pretty* nil))
-    (cond ((failures results)
-           (format t "Status:~%")
-           (dolist (failure (reverse (failures results)))
-             (with-accessors ((status result-status)
-                              (file result-file)
-                              (condition result-condition)) failure
-               (case status
-                 (:unhandled-error
-                  (output-colored-text
-                   status " Unhandled Error")
-                  (format t " ~a~%" (enough-namestring file)))
-                 (:invalid-exit-status
-                  (output-colored-text
-                   status " Invalid exit status:")
-                  (format t " ~a~%" (enough-namestring file)))
-                 (:skipped-disabled
-                  (when *report-skipped-tests*
-                    (format t " ~20a ~a / ~a~%"
-                            "Skipped (irrelevant):"
-                            (enough-namestring file)
-                            condition))
-                  (incf skipcount))
-                 (t
-                  (output-colored-text
-                   status
-                   (ecase status
-                     (:expected-failure " Expected failure:")
-                     (:unexpected-failure " Failure:")
-                     (:leftover-thread " Leftover thread (broken):")
-                     (:unexpected-success " Unexpected success:")
-                     (:skipped-broken " Skipped (broken):")
-                     (:skipped-disabled " Skipped (irrelevant):")))
-                  (format t " ~a / ~a~%"
-                          (enough-namestring file)
-                          condition)))))
-           (when (> skipcount 0)
-             (format t " (~a tests skipped for this combination of platform and features)~%"
-                     skipcount)))
-          (t
-           (format t "All tests succeeded~%")))))
 
 (defun pure-runner (files test-fun)
   (format t "// Running pure tests (~a)~%" test-fun)
@@ -250,3 +221,66 @@
                          :skipped-broken
                          :skipped-disabled)))
              results))
+
+;;; Result reporting
+
+(defun report (results &key (style *report-style*) (target *report-target*))
+  (report-using-style results style target))
+
+(defgeneric report-using-style (results style target))
+
+(defmethod report-using-style ((results t) (style t) (target string))
+  (report-using-style results style (parse-namestring target)))
+
+(defmethod report-using-style ((results t) (style t) (target pathname))
+  (with-open-file (stream target :if-does-not-exist :create
+                                 :direction :output
+                                 :if-exists :supersede)
+    (report-using-style results style stream)))
+
+(defmethod report-using-style ((results t) (style (eql :describe)) (target stream))
+  (terpri target)
+  (format target "Finished running tests.~%")
+  (let ((skipcount 0)
+        (*print-pretty* nil))
+    (cond ((failures results)
+           (format target "Status:~%")
+           (dolist (failure (reverse (failures results)))
+             (with-accessors ((status result-status)
+                              (file result-file)
+                              (condition result-condition)) failure
+               (case status
+                 (:unhandled-error
+                  (output-colored-text status
+                                       " Unhandled Error")
+                  (format target " ~a~%"
+                          (enough-namestring file)))
+                 (:invalid-exit-status
+                  (output-colored-text status
+                                       " Invalid exit status:")
+                  (format target " ~a~%"
+                          (enough-namestring file)))
+                 (:skipped-disabled
+                  (when *report-skipped-tests*
+                    (format target " ~20a ~a / ~a~%"
+                            "Skipped (irrelevant):"
+                            (enough-namestring file)
+                            condition))
+                  (incf skipcount))
+                 (t
+                  (output-colored-text status
+                                       (ecase status
+                                         (:expected-failure " Expected failure:")
+                                         (:unexpected-failure " Failure:")
+                                         (:leftover-thread " Leftover thread (broken):")
+                                         (:unexpected-success " Unexpected success:")
+                                         (:skipped-broken " Skipped (broken):")
+                                         (:skipped-disabled " Skipped (irrelevant):")))
+                  (format target " ~a / ~a~%"
+                          (enough-namestring file)
+                          condition)))))
+           (when (> skipcount 0)
+             (format target " (~a tests skipped for this combination of platform and features)~%"
+                     skipcount)))
+          (t
+           (format target "All tests succeeded~%")))))

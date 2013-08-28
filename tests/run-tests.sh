@@ -11,6 +11,16 @@
 #  --break-on-expected-failure   Break into the debugger when any test fails
 #  --report-skipped-tests        Include tests :skipped-on target SBCL in
 #                                the test report.
+#  --report-style STYLE          Name of the style that should be used
+#                                to format test results. Supported
+#                                STYLEs: describe.
+#  --report-target TARGET        Controls where the test result report
+#                                should go. When supplied, TARGET is
+#                                treated as the name of a file into
+#                                which the report should be
+#                                written. When the option is omitted,
+#                                the report is written to standard
+#                                output.
 #
 # If no test files are specified, runs all tests.
 
