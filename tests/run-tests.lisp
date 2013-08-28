@@ -169,7 +169,9 @@
               (with-open-file (stream "test-status.lisp-expr"
                                       :direction :input
                                       :if-does-not-exist :error)
-                (append-failures (read stream)))
+                (append-failures
+                 (sb-ext:without-package-locks ; test names may contain such symbols
+                   (read stream))))
               (push (list :invalid-exit-status file)
                     *all-failures*)))))))
 
