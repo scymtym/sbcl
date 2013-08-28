@@ -16,7 +16,7 @@
 
 (load "colorize.lisp")
 
-(defvar *all-failures* nil)
+(defvar *all-results* nil)
 (defvar *break-on-error* nil)
 (defvar *report-skipped-tests* nil)
 (defvar *accept-files* nil)
@@ -38,49 +38,51 @@
   (impure-runner (impure-load-files) #'load-test)
   (impure-runner (impure-cload-files) #'cload-test)
   #-win32 (impure-runner (sh-files) #'sh-test)
-  (report)
-  (sb-ext:exit :code (if (unexpected-failures)
+  (report *all-results*)
+  (sb-ext:exit :code (if (unexpected-failures *all-results*)
                          1
                          104)))
 
-(defun report ()
-  (terpri)
+(defun report (results)
+  (terpri t)
   (format t "Finished running tests.~%")
   (let ((skipcount 0)
         (*print-pretty* nil))
-    (cond (*all-failures*
+    (cond ((failures results)
            (format t "Status:~%")
-           (dolist (fail (reverse *all-failures*))
-             (cond ((eq (car fail) :unhandled-error)
-                    (output-colored-text (car fail)
-                                          " Unhandled Error")
-                    (format t " ~a~%"
-                            (enough-namestring (second fail))))
-                   ((eq (car fail) :invalid-exit-status)
-                    (output-colored-text (car fail)
-                                          " Invalid exit status:")
-                    (format t " ~a~%"
-                            (enough-namestring (second fail))))
-                   ((eq (car fail) :skipped-disabled)
-                    (when *report-skipped-tests*
-                      (format t " ~20a ~a / ~a~%"
-                              "Skipped (irrelevant):"
-                              (enough-namestring (second fail))
-                              (third fail)))
-                    (incf skipcount))
-                   (t
-                    (output-colored-text
-                     (first fail)
-                     (ecase (first fail)
-                       (:expected-failure " Expected failure:")
-                       (:unexpected-failure " Failure:")
-                       (:leftover-thread " Leftover thread (broken):")
-                       (:unexpected-success " Unexpected success:")
-                       (:skipped-broken " Skipped (broken):")
-                       (:skipped-disabled " Skipped (irrelevant):")))
-                    (format t " ~a / ~a~%"
-                            (enough-namestring (second fail))
-                            (third fail)))))
+           (dolist (failure (reverse (failures results)))
+             (with-accessors ((status result-status)
+                              (file result-file)
+                              (condition result-condition)) failure
+               (case status
+                 (:unhandled-error
+                  (output-colored-text
+                   status " Unhandled Error")
+                  (format t " ~a~%" (enough-namestring file)))
+                 (:invalid-exit-status
+                  (output-colored-text
+                   status " Invalid exit status:")
+                  (format t " ~a~%" (enough-namestring file)))
+                 (:skipped-disabled
+                  (when *report-skipped-tests*
+                    (format t " ~20a ~a / ~a~%"
+                            "Skipped (irrelevant):"
+                            (enough-namestring file)
+                            condition))
+                  (incf skipcount))
+                 (t
+                  (output-colored-text
+                   status
+                   (ecase status
+                     (:expected-failure " Expected failure:")
+                     (:unexpected-failure " Failure:")
+                     (:leftover-thread " Leftover thread (broken):")
+                     (:unexpected-success " Unexpected success:")
+                     (:skipped-broken " Skipped (broken):")
+                     (:skipped-disabled " Skipped (irrelevant):")))
+                  (format t " ~a / ~a~%"
+                          (enough-namestring file)
+                          condition)))))
            (when (> skipcount 0)
              (format t " (~a tests skipped for this combination of platform and features)~%"
                      skipcount)))
@@ -90,7 +92,7 @@
 (defun pure-runner (files test-fun)
   (format t "// Running pure tests (~a)~%" test-fun)
   (let ((*package* (find-package :cl-user))
-        (*failures* nil))
+        (*results* '()))
     (setup-cl-user)
     (dolist (file files)
       (when (accept-test-file file)
@@ -99,7 +101,7 @@
             (handler-bind ((error (make-error-handler file)))
               (eval (funcall test-fun file)))
           (skip-file ()))))
-    (append-failures)))
+    (append-results)))
 
 (defun run-in-child-sbcl (load-forms forms)
   ;; We used to fork() for POSIX platforms, and use this for Windows.
@@ -141,8 +143,8 @@
         (restart-case
             (handler-bind
                 ((error (lambda (condition)
-                          (push (list :unhandled-error file)
-                                test-util::*failures*)
+                          (push (make-result :file file :status :unhandled-error)
+                                test-util:*results*)
                           (cond (*break-on-error*
                                  (test-util:really-invoke-debugger condition))
                                 (t
@@ -152,7 +154,7 @@
                           (invoke-restart 'skip-file))))
               ,test-code)
           (skip-file ()
-            (format t ">>>~a<<<~%" test-util::*failures*)))
+            (format t ">>>~a<<<~%" test-util:*results*)))
         (test-util:report-test-status)
         (sb-ext:exit :code 104)))))
 
@@ -169,15 +171,15 @@
               (with-open-file (stream "test-status.lisp-expr"
                                       :direction :input
                                       :if-does-not-exist :error)
-                (append-failures
+                (append-results
                  (sb-ext:without-package-locks ; test names may contain such symbols
                    (read stream))))
-              (push (list :invalid-exit-status file)
-                    *all-failures*)))))))
+              (push (make-result :file file :status :invalid-exit-status)
+                    *all-results*)))))))
 
 (defun make-error-handler (file)
   (lambda (condition)
-    (push (list :unhandled-error file) *failures*)
+    (push (make-result :file file :status :unhandled-error) *results*)
     (cond (*break-on-error*
            (test-util:really-invoke-debugger condition))
           (t
@@ -185,17 +187,6 @@
                    (type-of condition) condition)
            (sb-debug:print-backtrace)))
     (invoke-restart 'skip-file)))
-
-(defun append-failures (&optional (failures *failures*))
-  (setf *all-failures* (append failures *all-failures*)))
-
-(defun unexpected-failures ()
-  (remove-if (lambda (x)
-               (or (eq (car x) :expected-failure)
-                   (eq (car x) :unexpected-success)
-                   (eq (car x) :skipped-broken)
-                   (eq (car x) :skipped-disabled)))
-             *all-failures*))
 
 (defun setup-cl-user ()
   (use-package :test-util)
@@ -218,7 +209,7 @@
   `(let ((process (sb-ext:run-program "/bin/sh"
                                       (list (native-namestring ,file))
                                       :output *error-output*)))
-     (let ((*failures* nil))
+     (let ((*results* '()))
        (test-util:report-test-status))
      (sb-ext:exit :code (process-exit-code process))))
 
@@ -241,3 +232,21 @@
 
 (defun sh-files ()
   (directory "*.test.sh"))
+
+;;; Result handling
+
+(defun append-results (&optional (results *results*))
+  (setf *all-results* (append results *all-results*)))
+
+(defun failures (results)
+  (remove :success results :key #'result-status))
+
+(defun unexpected-failures (results)
+  (remove-if (lambda (x)
+               (member (result-status x)
+                       '(:success
+                         :expected-failure
+                         :unexpected-success
+                         :skipped-broken
+                         :skipped-disabled)))
+             results))

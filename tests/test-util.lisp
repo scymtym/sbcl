@@ -1,6 +1,8 @@
 (defpackage :test-util
   (:use :cl :sb-ext)
-  (:export #:with-test #:report-test-status #:*failures*
+  (:export #:result-file #:result-name #:result-status #:result-condition #:make-result
+           #:result-failure-p #:result-error-p
+           #:with-test #:report-test-status #:*results*
            #:really-invoke-debugger
            #:*break-on-failure* #:*break-on-expected-failure*
            #:make-kill-thread #:make-join-thread
@@ -10,7 +12,7 @@
 
 (defvar *test-count* 0)
 (defvar *test-file* nil)
-(defvar *failures* nil)
+(defvar *results* '())
 (defvar *break-on-failure* nil)
 (defvar *break-on-expected-failure* nil)
 
@@ -44,6 +46,30 @@
   (apply #'format *trace-output* args)
   (terpri *trace-output*)
   (force-output *trace-output*))
+
+(defun required-argument (&optional name)
+  (error "Missing required argument~@[ ~S~]" name))
+
+(defstruct result
+  (file (required-argument :file) :type pathname :read-only t)
+  (name nil :type (or null string symbol cons) :read-only t)
+  (status (required-argument :status) :type keyword :read-only t)
+  (condition nil :type (or null string condition) :read-only t))
+
+(defun result-failure-p (result)
+  (member (result-status result)
+          '(:unexpected-failure :leftover-thread
+            :unexpected-success)))
+
+(defun result-error-p (result)
+  (member (result-status result)
+          '(:unhandled-error :invalid-exit-status)))
+
+(defmethod print-object ((object result) stream)
+  (if *print-escape*
+      (call-next-method)
+      (print-unreadable-object (object stream :type t :identity t)
+        (format stream "~A ~A" (result-name object) (result-status object)))))
 
 (defmacro with-test ((&key fails-on broken-on skipped-on name)
                      &body body)
@@ -94,14 +120,19 @@
                       (return-from ,block-name)))
                   (if (expected-failure-p ,fails-on)
                       (fail-test :unexpected-success ',name nil)
-                      (log-msg "Success ~S" ',name)))))))))))
+                      (progn
+                        (push (make-result :file *test-file*
+                                           :name (or ',name *test-count*)
+                                           :status :success)
+                              *results*)
+                        (log-msg "Success ~S" ',name))))))))))))
 
 (defun report-test-status ()
   (with-standard-io-syntax
-      (with-open-file (stream "test-status.lisp-expr"
-                              :direction :output
-                              :if-exists :supersede)
-        (format stream "~s~%" *failures*))))
+    (with-open-file (stream "test-status.lisp-expr"
+                            :direction :output
+                            :if-exists :supersede)
+      (format stream "~s~%" *results*))))
 
 (defun start-test ()
   (unless (eq *test-file* *load-pathname*)
@@ -121,8 +152,11 @@
                type test-name condition)
       (log-msg "~@<~A ~S ~:_due to ~S: ~4I~:_\"~A\"~:>"
                type test-name condition condition))
-  (push (list type *test-file* (or test-name *test-count*))
-        *failures*)
+  (push (make-result :file *test-file*
+                     :name (or test-name *test-count*)
+                     :status type
+                     :condition (princ-to-string condition))
+        *results*)
   (unless (stringp condition)
     (when (or (and *break-on-failure*
                    (not (eq type :expected-failure)))
