@@ -47,7 +47,7 @@
                               arg))))
             ((string= arg "--report-skipped-tests")
              (setf *report-skipped-tests* t))
-            ((string= arg "--no-color"))
+            ((string= arg "--no-color")) ; TODO
             (t
              (push (truename (parse-namestring arg)) *accept-files*)))))
   (pure-runner (pure-load-files) #'load-test)
@@ -113,6 +113,7 @@
         (format t "// Running ~a~%" file)
         (restart-case
             (handler-bind
+                ;; TODO use make-error-handler
                 ((error (lambda (condition)
                           (push (make-result :file file :status :unhandled-error)
                                 test-util:*results*)
