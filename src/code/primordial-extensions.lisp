@@ -327,23 +327,54 @@
 ;;; a helper function for various macros which expect clauses of a
 ;;; given length, etc.
 ;;;
-;;; Return true if X is a proper list whose length is between MIN and
-;;; MAX (inclusive).
-(defun proper-list-of-length-p (x min &optional (max min))
+;;; Return true if THING is a proper list whose length is between MIN
+;;; and MAX (inclusive).
+(defun proper-list-of-length-p (thing min &optional (max min)) ; TODO still needed?
   ;; FIXME: This implementation will hang on circular list
-  ;; structure. Since this is an error-checking utility, i.e. its
-  ;; job is to deal with screwed-up input, it'd be good style to fix
-  ;; it so that it can deal with circular list structure.
+  ;; structure. Since this is an error-checking utility, i.e. its job
+  ;; is to deal with screwed-up input, it'd be good style to fix it so
+  ;; that it can deal with circular list structure.
   (cond ((minusp max) nil)
-        ((null x) (zerop min))
-        ((consp x)
+        ((null thing) (zerop min))
+        ((consp thing)
          (and (plusp max)
-              (proper-list-of-length-p (cdr x)
+              (proper-list-of-length-p (cdr thing)
                                        (if (plusp (1- min))
                                            (1- min)
                                            0)
                                        (1- max))))
         (t nil)))
+
+;; Signal an error unless THING as a proper list the length of which
+;; is between MIN and MAX. NAME, KIND are LAMBDA-LIST are used for the
+;; corresponding slots of ARG-COUNT-ERROR.
+;;
+;; If THING is valid, it is returned. This allows for the following
+;; pattern:
+;;
+;;   (let ((same-as-thing (check-proper-list-of-length thing <min> <max>)))
+;;     <use only same-as-thing not thing>)
+;;
+;; which helps the compiler optimize away the
+;; CHECK-PROPER-LIST-OF-LENGTH call when the type of THING is known at
+;; compile time with sufficient precision.
+(defun check-proper-list-of-length (thing min max
+                                    &key
+                                    name kind lambda-list
+                                    (signal-via 'error))
+  (cond
+    ((proper-list-of-length-p thing min max))
+    ((eq signal-via 'error)
+     (sb-kernel::arg-count-error kind nil thing lambda-list min max))
+    (t
+     (apply signal-via 'arg-count-error
+            :kind kind
+            :args thing
+            :lambda-list lambda-list
+            :minimum min
+            :maximum max
+            (when name (list :name name)))))
+  thing)
 
 (defun proper-list-p (x)
   (unless (consp x)

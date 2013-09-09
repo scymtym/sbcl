@@ -1701,3 +1701,21 @@
     (unwind))
 (defknown spin-loop-hint () (values)
     (always-translatable))
+
+;;; elidable list checks
+;;;
+;;; These are inserted by e.g. the PARSE-DEFMACRO machinery but may be
+;;; elided again if sufficiently precise type information is available
+;;; at compile time.
+
+;; Not flushable since errors should be signaled even if values are
+;; unused.
+(defknown check-list-of-length-at-least
+    (list (integer 0) &key (:name t) (:kind t) (:lambda-list t) (:signal-via t))
+    (values list)
+    ())
+
+(defknown check-proper-list-of-length
+    (list (integer 0) (integer 0) &key (:name t) (:kind t) (:lambda-list t) (:signal-via t))
+    (values list)
+    ())

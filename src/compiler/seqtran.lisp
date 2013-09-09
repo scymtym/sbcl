@@ -1052,6 +1052,86 @@
 (deftransform copy-seq ((seq) ((and sequence (not vector) (not list))))
   '(sb!sequence:copy-seq seq))
 
+(defun transform-list-length-check (list min &optional max)
+  ;; If the leaf corresponding to LIST is used more than once (the one
+  ;; permissible use is by PROPER-LIST-OF-LENGTH-P itself),
+  ;; LVAR-CONSERVATIVE-TYPE will return a conservative type since the
+  ;; derived type cannot be trusted due to possible mutation of LIST
+  ;; in other uses.
+  (let* ((list-type (lvar-conservative-type list))
+         (min-type (lvar-type min))
+         (low (numeric-type-high min-type))
+         (max-type (when max (lvar-type max)))
+         (high (when (and max (numeric-type-p max-type))
+                 (numeric-type-low max-type))))
+    ;; Make sure the interesting bounds can be derived from MIN and
+    ;; MAX.
+    (unless (and (integerp low) (or (not max) (integerp high)))
+      (give-up-ir1-transform "bounds are not known at compile time"))
+
+    ;; Try to determine the length of LIST. If we get an exact
+    ;; result:
+    ;; * for matching lengths, transform away the runtime check
+    ;; * for length mismatches, emit a compile-time warning and
+    ;;   leave the runtime check as it is
+    ;; Otherwise (no exact result) give up.
+    (multiple-value-bind (length exact?)
+        (if (csubtypep list-type (sb-c::specifier-type 'null))
+            (values 0 t)
+            (sb-kernel::cons-type-length-info list-type))
+      (cond
+        ((and exact? (and (<= low length)
+                          (or (not max) (<= length high))))
+         'list)
+        (exact?
+         (warn "List of incorrect length ~D; expected ~S"
+               length `(integer ,low ,@(when max `(,high))))
+         (give-up-ir1-transform))
+        (t
+         (give-up-ir1-transform "list length is not known at compile time"))))))
+
+(deftransform check-list-of-length-at-least
+    ((list min &key name kind lambda-list signal-via)
+     (list (integer 0) &rest t))
+  "compile-time check list length"
+  (transform-list-length-check list min))
+
+(deftransform check-proper-list-of-length
+    ((list min max &key name kind lambda-list signal-via)
+     (list (integer 0) t &rest t))
+  "compile-time check list length"
+  (transform-list-length-check list min max))
+
+;; (declaim (ftype (function () (cons t (cons t (cons t null)))) g))
+;; (defun g ()
+;;   (list 1 2 3))
+;;
+;; (defun f ()
+;;   (declare (optimize (speed 3)))
+;;   (let ((z (g)))
+;;     #+no (setf (cdr z) nil)
+;;     #+no (destructuring-bind (a b c) z
+;;       (values a b c))
+;;     ;; modified macro-expansion of the above such that ARGS1072 has
+;;     ;; only one "real" use in PROPER-LIST-OF-LENGTH-P.
+;;     (LET ((WHOLE1070 Z))
+;;       (DECLARE (TYPE list WHOLE1070))
+;;       (LET* ()
+;;         (DECLARE (MUFFLE-CONDITIONS CODE-DELETION-NOTE))
+;;         (LET* ((ARGS1072 WHOLE1070)
+;;                (same-as-ARGS1072
+;;                  nil #+no (sb-impl::CHECK-PROPER-LIST-OF-LENGTH ARGS1072 3 3
+;;                                                        :kind 'DESTRUCTURING-BIND
+;;                                                        :lambda-list '(A B C)))
+;;                (same-as-ARGS1073
+;;                  (sb-impl::CHECK-LIST-OF-LENGTH-AT-LEAST ARGS1072 2
+;;                                                          :kind 'DESTRUCTURING-BIND
+;;                                                          :lambda-list '(A B C))))
+;;           (LET* ((A (CAR same-as-ARGS1072))
+;;                  (B (CAR (CDR same-as-ARGS1072)))
+;;                  (C (CAR (CDR (CDR same-as-ARGS1072)))))
+;;             (VALUES A B C)))))))
+
 ;;; FIXME: it really should be possible to take advantage of the
 ;;; macros used in code/seq.lisp here to avoid duplication of code,
 ;;; and enable even funkier transformations.

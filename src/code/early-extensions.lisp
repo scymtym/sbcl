@@ -205,10 +205,40 @@
 
 ;;; Is X a (possibly-improper) list of at least N elements?
 (declaim (ftype (function (t index)) list-of-length-at-least-p))
-(defun list-of-length-at-least-p (x n)
+(defun list-of-length-at-least-p (x n) ; TODO still needed?
   (or (zerop n) ; since anything can be considered an improper list of length 0
       (and (consp x)
            (list-of-length-at-least-p (cdr x) (1- n)))))
+
+;; Signal an error unless THING as a list of length at least
+;; MIN. NAME, KIND are LAMBDA-LIST are used for the corresponding
+;; slots of ARG-COUNT-ERROR.
+;;
+;; If THING is valid, it is returned. This allows for the following
+;; pattern:
+;;
+;;   (let ((same-as-thing (check-list-of-length-at-least thing <min>)))
+;;     <use only same-as-thing not thing>)
+;;
+;; which helps the compiler optimize away the
+;; CHECK-LIST-OF-LENGTH-AT-LEAST call when the type of THING is known
+;; at compile time with sufficient precision.
+(defun check-list-of-length-at-least (thing min &key
+                                                name kind lambda-list
+                                                (signal-via 'error))
+  (cond
+    ((list-of-length-at-least-p thing min))
+    ((eq signal-via 'error)
+     (sb-kernel::arg-count-error kind name thing lambda-list min nil))
+    (t
+     (apply signal-via 'arg-count-error
+            :kind kind
+            :args thing
+            :lambda-list lambda-list
+            :minimum min
+            :maximum nil
+            (when name (list :name name)))))
+  thing)
 
 (declaim (inline singleton-p))
 (defun singleton-p (list)
