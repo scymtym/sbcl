@@ -1451,9 +1451,7 @@ See also: RETURN-FROM-THREAD, ABORT-THREAD."
   (let ((thread (%make-thread :name name :%ephemeral-p ephemeral)))
     (let* ((setup-sem (make-semaphore :name "Thread setup semaphore"))
            (real-function (coerce function 'function))
-           (arguments     (if (listp arguments)
-                              arguments
-                              (list arguments)))
+           (arguments     (ensure-list arguments))
            (initial-function
              (named-lambda initial-thread-function ()
                ;; As it is, this lambda must not cons until we are

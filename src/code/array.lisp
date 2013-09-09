@@ -161,7 +161,7 @@
                               (initial-contents nil initial-contents-p)
                               adjustable fill-pointer
                               displaced-to displaced-index-offset)
-  (let* ((dimensions (if (listp dimensions) dimensions (list dimensions)))
+  (let* ((dimensions (ensure-list dimensions))
          (array-rank (length (the list dimensions)))
          (simple (and (null fill-pointer)
                       (not adjustable)
@@ -889,7 +889,7 @@ of specialized arrays is supported."
   "Adjust ARRAY's dimensions to the given DIMENSIONS and stuff."
   (when (invalid-array-p array)
     (invalid-array-error array))
-  (let ((dimensions (if (listp dimensions) dimensions (list dimensions))))
+  (let ((dimensions (ensure-list dimensions)))
     (cond ((/= (the fixnum (length (the list dimensions)))
                (the fixnum (array-rank array)))
            (error "The number of dimensions not equal to rank of array."))

@@ -215,6 +215,10 @@
   (and (consp list)
        (null (rest list))))
 
+(declaim (inline ensure-list))
+(defun ensure-list (thing)
+  (if (listp thing) thing (list thing)))
+
 ;;; Is X is a positive prime integer?
 (defun positive-primep (x)
   ;; This happens to be called only from one place in sbcl-0.7.0, and

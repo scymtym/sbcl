@@ -57,10 +57,7 @@
 ;;; Return a list of all the nodes which use LVAR.
 (declaim (ftype (sfunction (lvar) list) find-uses))
 (defun find-uses (lvar)
-  (let ((uses (lvar-uses lvar)))
-    (if (listp uses)
-        uses
-        (list uses))))
+  (ensure-list (lvar-uses lvar)))
 
 (declaim (ftype (sfunction (lvar) lvar) principal-lvar))
 (defun principal-lvar (lvar)
@@ -524,7 +521,7 @@
                  (lvar-good-for-dx-p (trivial-lambda-var-ref-lvar use) dx component))))))
 
 (defun lvar-good-for-dx-p (lvar dx &optional component)
-  (let ((uses (lvar-uses lvar)))
+  (let ((uses (lvar-uses lvar))) ; TODO use ENSURE-LIST? or is it too slow?
     (if (listp uses)
         (when uses
           (every (lambda (use)
@@ -655,7 +652,7 @@
                     (handle-nested-dynamic-extent-lvars
                      dx other recheck-component)))))))
       (cons (cons dx lvar)
-            (if (listp uses)
+            (if (listp uses) ; TODO use ENSURE-LIST? or is it too slow?
                 (loop for use in uses
                       when (use-good-for-dx-p use dx recheck-component)
                       nconc (recurse use))
@@ -1870,7 +1867,7 @@ is :ANY, the function name is not checked."
   (declare (type lvar lvar)
            (type (or symbol list) fun)
            (type index num-args))
-  (let ((fun (if (listp fun) fun (list fun))))
+  (let ((fun (ensure-list fun)))
     (let ((inside (lvar-uses lvar)))
       (unless (combination-p inside)
         (give-up-ir1-transform))

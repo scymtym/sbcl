@@ -603,9 +603,7 @@ REMOVE-PACKAGE-LOCAL-NICKNAME, and the DEFPACKAGE option :LOCAL-NICKNAMES."
 ;;; Return a list of packages given a package designator or list of
 ;;; package designators, or die trying.
 (defun package-listify (thing)
-  (let ((res ()))
-    (dolist (thing (if (listp thing) thing (list thing)) res)
-      (push (find-undeleted-package-or-lose thing) res))))
+  (mapcar #'find-undeleted-package-or-lose (ensure-list thing)))
 
 ;;; Make a package name into a simple-string.
 (defun package-namify (n)
@@ -1249,9 +1247,7 @@ uninterned."
                                thing))))
 
 (defun string-listify (thing)
-  (mapcar #'string (if (listp thing)
-                       thing
-                       (list thing))))
+  (mapcar #'string (ensure-list thing)))
 
 ;;; This is like UNINTERN, except if SYMBOL is inherited, it chases
 ;;; down the package it is inherited from and uninterns it there. Used
