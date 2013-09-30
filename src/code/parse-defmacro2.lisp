@@ -32,7 +32,9 @@
 
 ;;; Lambda list sections
 
-(defstruct (lambda-list-section (:copier nil))
+(defstruct (lambda-list-section (:constructor make-lambda-list-section (name keywords guard parser
+                                                                        #+sb-doc &key #+sb-doc documentation))
+                                (:copier nil))
   (name (missing-arg) :type symbol :read-only t)
   (keywords (missing-arg) :type list :read-only t)
   (guard (missing-arg) :type function :read-only t)
@@ -77,6 +79,24 @@
     (declare (ignore position depth))
     (eq keyword (car rest-of-lambda-list))))
 
+;; TODO
+(defun check-depth (valid-depth depth name)
+  (unless (typep depth ',valid-depth)
+    (error "~@<~A parameter section may only appear at depth ~A of ~
+            lambda  list (not ~D)~@:>"
+           name valid-depth depth)))
+
+(defun check-position (valid-position position name)
+  (unless (typep position ',valid-position)
+    (error "~@<~A parameter section may only appear at position ~A of ~
+            lambda list (not ~D)~@:>"
+            name valid-position position)))
+
+(defun check-before (before seen name context)
+  (when (some #'seen ',before)
+    (error "~@<~A parameter section after ~A in ~A~@:>"
+           name (find-if #'seen before) context)))
+
 (defmacro define-lambda-list-section (name-and-options &body body)
   #+sb-doc
   "TODO"
@@ -90,56 +110,47 @@
       (declare (ignore declarations #-sb-doc documentation))
       (with-unique-names (section)
         `(let ((,section (make-lambda-list-section
-                          :name ',name
-                          :keywords '(,@(when keyword `(,keyword)) ,@aliases)
-                          :guard ,(if guard
-                                      `(lambda (rest position depth)
-                                         (declare (ignore position depth))
-                                         (let ((head (car rest)))
-                                           ,guard))
-                                      `(lambda-list-section-applicable-when-keyword-matches ',keyword))
-                          :parser (lambda (rest position depth
-                                           variable seen
-                                           rest-var)
-                                    (declare (ignorable position depth))
-                                    (let ((head (first rest))
-                                          (consumed 0))
-                                      (labels ((seen (&rest args) (apply seen args))
-                                               (variable (&rest args) (apply variable args))
-                                               (try-consume (&key type allow-keyword)
-                                                 (when (and head
-                                                            (or allow-keyword
-                                                                (not (lambda-list-keyword-p head)))
-                                                            (or (not type) (typep head type)))
-                                                   (incf consumed)
-                                                   (multiple-value-prog1
-                                                       (values head t)
-                                                     (pop rest)
-                                                     (setf head (first rest)))))
-                                               (consume (&rest args)
-                                                 (multiple-value-bind (thing found?)
-                                                     (apply #'try-consume args)
-                                                  (if found?
-                                                      (values thing found?)
-                                                      (defmacro-error (format nil "~A ~S" ',keyword head) 'TODO-context 'TODO-name)))))
-                                        ,@(when valid-depth
-                                            `((unless (typep depth ',valid-depth)
-                                                (error "~A parameter section may only appear at depth ~A of lambda list (not ~D)"
-                                                       ',name ',valid-depth depth))))
-                                        ,@(when valid-position
-                                            `((unless (typep position ',valid-position)
-                                                (error "~A parameter section may only appear at position ~A of lambda list (not ~D)"
-                                                       ',name ',valid-position position))))
-                                        ,@(when before
-                                            `((when (some #'seen ',before)
-                                                (error "~A parameter section after ~A in ~A"
-                                                       ',name (find-if #'seen ',before) 'TODO-context))))
-                                        ,@(when keyword
-                                            `((consume :allow-keyword t)))
-                                        (seen ',name t)
-                                        (multiple-value-bind (variables minimum maximum new-rest-var)
-                                            (progn ,@body)
-                                          (values variables consumed minimum maximum new-rest-var)))))
+                          ',name '(,@(when keyword `(,keyword)) ,@aliases)
+                          ,(if guard
+                               `(lambda (rest position depth)
+                                  (declare (ignore position depth))
+                                  (let ((head (car rest)))
+                                    ,guard))
+                               `(lambda-list-section-applicable-when-keyword-matches ',keyword))
+                          (lambda (rest position depth variable seen rest-var)
+                            (declare (ignorable position depth))
+                            (let ((head (first rest))
+                                  (consumed 0))
+                              (labels ((seen (&rest args) (apply seen args))
+                                       (variable (&rest args) (apply variable args))
+                                       (try-consume (&key type allow-keyword)
+                                         (when (and head
+                                                    (or allow-keyword
+                                                        (not (lambda-list-keyword-p head)))
+                                                    (or (not type) (typep head type)))
+                                           (incf consumed)
+                                           (multiple-value-prog1
+                                               (values head t)
+                                             (pop rest)
+                                             (setf head (first rest)))))
+                                       (consume (&rest args)
+                                         (multiple-value-bind (thing found?)
+                                             (apply #'try-consume args)
+                                           (if found?
+                                               (values thing found?)
+                                               (defmacro-error (format nil "~A ~S" ',keyword head) 'TODO-context 'TODO-name)))))
+                                ,@(when valid-depth
+                                    `((check-depth ',valid-depth depth ',name)))
+                                ,@(when valid-position
+                                    `((check-position ',valid-position position ',name)))
+                                ,@(when before
+                                    `((check-before ',before seen ',name  'TODO-context)))
+                                ,@(when keyword
+                                    `((consume :allow-keyword t)))
+                                (seen ',name t)
+                                (multiple-value-bind (variables minimum maximum new-rest-var)
+                                    (progn ,@body)
+                                  (values variables consumed minimum maximum new-rest-var)))))
                           #+sb-doc :documentation #+sb-doc ,documentation)))
            (setf (find-lambda-list-section ',name) ,section))))))
 
@@ -364,40 +375,44 @@
 ;;;   (
 (defun make-defmacro-bindings (lambda-list-entries whole-var minimum maximum)
   (collect ((bindings))
-    (let* ((checked-var (gensym "CHECKED"))
-           (rest-var checked-var))
-      (bindings `(,checked-var
-                  (,(if (not maximum)
-                        'sb-impl::check-list-of-length-at-least
-                        'sb-impl::check-proper-list-of-length)
-                   ,whole-var ,minimum ,@(when maximum `(,maximum))
-                   ,@(when nil #+no name `(:name 'TODO-name))
-                   :kind 'TODO-context
-                   :lambda-list 'TODO-lambda-list
-                   :signal-via 'TODO-error-fun)))
-      (labels ((process (spec)
-                 (destructuring-bind (name . value) spec
-                   (case name
-                     (:nested
-                      (multiple-value-bind (value-form next-rest-var) (funcall (fourth value) rest-var)
-                        (mapc (lambda (x) (bindings x))
-                              (make-defmacro-bindings (first value) value-form  (second value) (third value))) ; TODO pass collector into recursive call
-                        (when next-rest-var
-                          (bindings next-rest-var)
-                          (setf rest-var (first next-rest-var)))))
-                     (t
-                      (multiple-value-bind (value-form next-rest-var) (funcall value rest-var)
-                        (bindings (list name value-form))
-                        (when next-rest-var
-                          (bindings next-rest-var)
-                          (setf rest-var (first next-rest-var))))))))
-               (foo (spec)
-                 (loop for (name entries) on spec :by #'cddr
-                       do (case name
-                            (&key (mapc #'process (rest entries)))
-                            (t (mapc #'process entries))))))
-        (foo lambda-list-entries))
-      (bindings))))
+    (labels ((process-binding (spec rest-var)
+               (destructuring-bind (name . value) spec
+                 (let ((next-rest-var
+                         (case name
+                           (:nested
+                            (multiple-value-bind (value-form next-rest-var) (funcall (fourth value) rest-var)
+                              (process-entries (first value) value-form  (second value) (third value))
+                              next-rest-var))
+                           (t
+                            (multiple-value-bind (value-form next-rest-var) (funcall value rest-var)
+                              (bindings (list name value-form))
+                              next-rest-var)))))
+                   (when next-rest-var
+                     (bindings next-rest-var)
+                     (first next-rest-var)))))
+             (process-entries (entries whole-var minimum maximum)
+               (let ((checked-var (gensym "CHECKED")))
+                 ;; Collect one binding for the check "whole"
+                 ;; variable.
+                 (bindings `(,checked-var
+                             (,(if (not maximum)
+                                   'sb-impl::check-list-of-length-at-least
+                                   'sb-impl::check-proper-list-of-length)
+                              ,whole-var ,minimum ,@(when maximum `(,maximum))
+                              ,@(when nil #+no name `(:name 'TODO-name))
+                              :kind 'TODO-context
+                              :lambda-list 'TODO-lambda-list
+                              :signal-via 'TODO-error-fun)))
+                 (loop with rest-var = checked-var
+                       for (name entries) on spec :by #'cddr ; TODO can be much simpler
+                       do (mapc (lambda (spec)
+                                  (setf rest-var (or (process-binding spec checked-var)
+                                                     rest-var)))
+                                (case name
+                                  (&key (rest entries)) ; TODO ugly; &key list starts with allow-other-keys-p
+                                  (t entries)))))))
+      (process-entries lambda-list-entries whole-var minimum maximum))
+    (bindings)))
 
 ;;; Parse LAMBDA-LIST and BODY and return, as multiple values:
 ;;; 1) a body (without documentation string or declarations)
