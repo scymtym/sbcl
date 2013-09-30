@@ -1071,7 +1071,7 @@
                                   debug-name
                                   system-lambda)
   (when (and (not debug-name) (eq '.anonymous. source-name))
-    (setf debug-name (name-lambdalike fun)))
+    (setf debug-name (name-lambdalike fun))) ; TODO do this in keyword arg processing?
   (destructuring-bind (decls macros symbol-macros &rest body)
       (if (eq (car fun) 'lambda-with-lexenv)
           (cdr fun)
@@ -1103,25 +1103,24 @@
   (multiple-value-bind (req opt restp rest-name keyp key-list allowp morep)
       (parse-lambda-list lambda-list)
     (declare (ignore rest-name))
-    (flet ((t (list)
-             (mapcar (constantly t) list)))
-      (let ((reqs (t req))
-            (opts (when opt (cons '&optional (t opt))))
-            ;; When it comes to building a type, &REST means pretty much the
-            ;; same thing as &MORE.
-            (rest (when (or morep restp) (list '&rest t)))
-            (keys (when keyp
-                    (cons '&key (mapcar (lambda (spec)
-                                          (let ((key/var (if (consp spec)
-                                                             (car spec)
-                                                             spec)))
-                                            (list (if (consp key/var)
-                                                      (car key/var)
-                                                      (keywordicate key/var))
-                                                  t)))
-                                        key-list))))
-            (allow (when allowp (list '&allow-other-keys))))
-        (specifier-type `(function (,@reqs ,@opts ,@rest ,@keys ,@allow) *))))))
+    (let ((reqs (make-list (length req) :initial-element t))
+          (opts (when opt
+                  (list* '&optional (make-list (length opt) :initial-element t))))
+          ;; When it comes to building a type, &REST means pretty much the
+          ;; same thing as &MORE.
+          (rest (when (or morep restp) (list '&rest t)))
+          (keys (when keyp
+                  (cons '&key (mapcar (lambda (spec)
+                                        (let ((key/var (if (consp spec)
+                                                           (car spec)
+                                                           spec)))
+                                          (list (if (consp key/var)
+                                                    (car key/var)
+                                                    (keywordicate key/var))
+                                                t)))
+                                      key-list))))
+          (allow (when allowp (list '&allow-other-keys))))
+      (specifier-type `(function (,@reqs ,@opts ,@rest ,@keys ,@allow) *)))))
 
 ;;; Get a DEFINED-FUN object for a function we are about to define. If
 ;;; the function has been forward referenced, then substitute for the
