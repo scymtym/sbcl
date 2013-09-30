@@ -281,7 +281,7 @@
 ;;; bound. We make the variables IGNORABLE so that we don't have to
 ;;; manually declare them IGNORE if their only purpose is to make the
 ;;; syntax work.
-(defun parse-deftransform (lambda-list body args error-form)
+(defun parse-deftransform (lambda-list body args error-form) ; TODO use new mechanism
   (multiple-value-bind (req opt restp rest keyp keys allowp)
       (parse-lambda-list lambda-list)
     (let* ((min-args (length req))

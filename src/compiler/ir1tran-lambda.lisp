@@ -85,7 +85,7 @@
 ;;;  5. a list of the &AUX values.
 (declaim (ftype (sfunction (list) (values list boolean boolean list list))
                 make-lambda-vars))
-(defun make-lambda-vars (list)
+(defun make-lambda-vars (list) ; TODO use new mechanism?
   (multiple-value-bind (required optional restp rest keyp keys allowp auxp aux
                         morep more-context more-count)
       (parse-lambda-list list)
@@ -1099,7 +1099,7 @@
 ;;; Given a lambda-list, return a FUN-TYPE object representing the signature:
 ;;; return type is *, and each individual arguments type is T -- but we get
 ;;; the argument counts and keywords.
-(defun ftype-from-lambda-list (lambda-list)
+(defun ftype-from-lambda-list (lambda-list) ; TODO use new mechanism
   (multiple-value-bind (req opt restp rest-name keyp key-list allowp morep)
       (parse-lambda-list lambda-list)
     (declare (ignore rest-name))
