@@ -63,26 +63,23 @@
   (:report
    (lambda (condition stream)
      (!printing-defmacro-lambda-list-bind-error (condition stream)
-       (format stream
-               "invalid number of elements in ~2I~_~:S ~
-                ~I~_to satisfy lambda list ~2I~_~:S: ~I~_"
-               (arg-count-error-args condition)
-               (arg-count-error-lambda-list condition))
-       (cond ((null (arg-count-error-maximum condition))
-              (format stream "at least ~W expected"
-                      (arg-count-error-minimum condition)))
-             ((= (arg-count-error-minimum condition)
-                 (arg-count-error-maximum condition))
-              (format stream "exactly ~W expected"
-                      (arg-count-error-minimum condition)))
-             (t
-              (format stream "between ~W and ~W expected"
-                      (arg-count-error-minimum condition)
-                      (arg-count-error-maximum condition))))
-       (format stream ", but ~a found"
-               (if (null (cdr (last (arg-count-error-args condition))))
-                   (length (arg-count-error-args condition))
-                   "not a proper list"))))))
+       (let* ((args (arg-count-error-args condition))
+             (lambda-list (arg-count-error-lambda-list condition))
+             (min (arg-count-error-minimum condition))
+             (max (arg-count-error-maximum condition))
+             (situation (cond ((null max) 0)
+                         ((= min max) 1)
+                         (t 2))))
+         (format stream
+                 "invalid number of elements in ~2I~_~:S ~
+                  ~I~_to satisfy lambda list ~2I~_~:S: ~I~_~
+                  ~[at least ~W~*~;exactly ~W~*~;between ~W and ~W~] ~
+                  expected, but ~a found"
+                 args lambda-list
+                 situation min max
+                 (if (cdr (last args))
+                     "not a proper list"
+                     (length args))))))))
 
 (define-condition defmacro-lambda-list-broken-key-list-error
                   (defmacro-lambda-list-bind-error)
