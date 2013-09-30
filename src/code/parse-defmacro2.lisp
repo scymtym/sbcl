@@ -40,7 +40,10 @@
   #+sb-doc (documentation nil :type (or null string) :read-only t))
 
 ;; TODO how does this relate to cl:lambda-list-keywords?
-(defvar *lambda-list-sections* '())
+(declaim (type list #|of lambda-list-section|# *lambda-list-sections*))
+(defvar *lambda-list-sections* '()
+  #+sb-doc
+  "Known lambda list sections.")
 
 (defun lambda-list-keyword-p (symbol)
   (find symbol *lambda-list-sections*
@@ -58,6 +61,9 @@
   (push new-value *lambda-list-sections*)
   new-value)
 
+;;; Return a LAMBDA-LIST-SECTION instance within SECTIONS applicable
+;;; to REST-OF-LAMBDA-LIST.
+;;; POSITION and DEPTH specify TODO and TODO respectively.
 (defun find-applicable-lambda-list-section (rest-of-lambda-list position depth
                                             &key (sections *lambda-list-sections*))
   (flet ((applicablep (lambda-list-section)
@@ -65,12 +71,15 @@
                     rest-of-lambda-list position depth)))
     (find-if #'applicablep sections)))
 
+;; used as default guard predicate for lambda list sections.
 (defun lambda-list-section-applicable-when-keyword-matches (keyword)
   (lambda (rest-of-lambda-list position depth)
     (declare (ignore position depth))
     (eq keyword (car rest-of-lambda-list))))
 
 (defmacro define-lambda-list-section (name-and-options &body body)
+  #+sb-doc
+  "TODO"
   (destructuring-bind (name &key (keyword name) aliases guard
                                  valid-position valid-depth before)
       (ensure-list name-and-options)
@@ -162,7 +171,8 @@
 
 ;;; Builtin lambda list sections
 
-(progn
+(progn ; TODO only for development
+
   (define-lambda-list-section (&whole :valid-position (eql 0))
     "&WHOLE var-or-pattern"
     (let ((var-or-pattern (consume)))
@@ -273,7 +283,7 @@
   (let ((variables ()))
     (named-lambda note-variable (&optional name init-form) ; TODO not used
       (when (member name variables :key #'car)
-        (error "variable ~S occurs more than once in ~A lambda list"
+        (error "~@<Variable ~S occurs more than once in ~A lambda list.~@:>"
                name context))
       (let ((cell (cons name init-form)))
        (push cell variables)
@@ -286,14 +296,29 @@
         ((not value)
          (gethash which seen))
         ((and (eq if-exists :error) (gethash which seen))
-         (error "Multiple ~A sections in ~A lambda list." which context))
+         (error "~@<Multiple ~A sections in ~A lambda list.~@:>"
+                which context))
         ((or (eq if-exists :replace) (not (gethash which seen)))
          (setf (gethash which seen) value))))))
 
+;;; Parse POSSIBLY-DOTTED-LAMBDA-LIST and return three values
+;;; 1) A plist of recognized lambda list sections of the form
+;;;
+;;;      (NAME1 ENTRIES1 NAME2 ENTRIES2 ...)
+;;;
+;;;    where NAMEN are names such as &whole or &key and ENTRIESN are
+;;;    lists of entries in the respective sections. Each of these
+;;;    entries is of the form:
+;;;
+;;;      (:nested . ENTRIES MINIMUM MAXIMUM BINDING)
+;;;      (NAME . INITIAL-VALUE)
+;;;
+;;; 2) Minimum number of arguments required by
+;;;    POSSIBLY-DOTTED-LAMBDA-LIST
+;;; 3) Maximum number of arguments required by
+;;;    POSSIBLY-DOTTED-LAMBDA-LIST
 (defun parse-defmacro-lambda-list (possibly-dotted-lambda-list depth
-                                   whole-var
-                                   name
-                                   context
+                                   whole-var name context
                                    &key
                                    error-fun
                                    anonymousp
@@ -332,6 +357,11 @@
 
 (parse-defmacro-lambda-list '(&whole boo) 0 'whole nil 'destructuring-bind2)
 
+;;; Return binding forms suitable for LET* for the elements of
+;;; LAMBDA-LIST-ENTRIES.
+;;; The elements of LAMBDA-LIST-ENTRIES have to be of the form:
+;;;
+;;;   (
 (defun make-defmacro-bindings (lambda-list-entries whole-var minimum maximum)
   (collect ((bindings))
     (let* ((checked-var (gensym "CHECKED"))
@@ -369,6 +399,12 @@
         (foo lambda-list-entries))
       (bindings))))
 
+;;; Parse LAMBDA-LIST and BODY and return, as multiple values:
+;;; 1) a body (without documentation string or declarations)
+;;; 2) possibly a DECLARE form to put where this code is inserted
+;;; 3) the documentation for the parsed body
+;;; 4) minimum number of arguments
+;;; 5) maximum number of arguments
 (defun parse-defmacro2 (lambda-list whole-var body name context
                         &key
                         (anonymousp nil)
