@@ -1,7 +1,13 @@
-(defpackage :benchmark-util
-  (:use #:cl #:sb-ext)
-  (:export #:with-benchmark
-           #:measuring
+(cl:defpackage #:benchmark-util
+  (:use
+   #:cl
+   #:sb-ext)
+
+  (:export
+   #:with-benchmark
+   #:measuring
+
+   #:report-benchmark-status
 
    #:result-file #:result-name #:result-status #:result-condition #:make-result
            #:result-failure-p #:result-error-p
@@ -11,17 +17,77 @@
            #:make-kill-thread #:make-join-thread
            #:runtime))
 
-(in-package :benchmark-util)
+(cl:in-package #:benchmark-util)
 
-(defvar *test-count* 0)
-(defvar *test-file* nil)
+(defvar *benchmark-file* nil)
 (defvar *results* '())
 (defvar *break-on-failure* nil)
-(defvar *break-on-expected-failure* nil)
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (require :sb-posix))
+;;; Benchmark results
 
+(defun required-argument (&optional name)
+  (error "Missing required argument~@[ ~S~]" name))
+
+(defstruct (measurement #+later (:constructor make-measurement (values)))
+  (values (required-argument :values) :type list :read-only t))
+
+(defun %make-measurement (values)
+  (make-measurement :values values))
+
+(macrolet ((define-reducing-reader (name reduce-by)
+             `(defun ,name (measurement)
+                (reduce #',reduce-by (measurement-values measurement)))))
+  (define-reducing-reader measurement-min min)
+  (define-reducing-reader measurement-max max)
+  (define-reducing-reader measurement-sum +))
+
+(defun measurement-mean (measurement)
+  (/ (measurement-sum measurement)
+     (length (measurement-values measurement))))
+
+(defun measurement-values/sorted (measurement)
+  (sort (copy-list (measurement-values measurement)) #'<))
+
+(defun measurement-quantile (measurement q k)
+  (declare (type (integer 1) q k))
+  (when (measurement-values measurement)
+    (let ((index (1- (ceiling (* k (length (measurement-values measurement))) q))))
+      (elt (measurement-values/sorted measurement) index))))
+
+(defun measurement-median (measurement)
+  (measurement-quantile measurement 2 1))
+
+(defstruct result
+  (file (required-argument :file) :type pathname :read-only t)
+  (name nil :type (or null string symbol cons) :read-only t)
+  (status (required-argument :status) :type keyword :read-only t)
+  (condition nil :type (or null string condition) :read-only t)
+  (runtime nil :type (or null measurement) :read-only t)
+  (bytes-consed nil :type (or null measurement) :read-only t))
+
+(defstruct (parameter-result (:include result))
+  (parameters nil :type list :read-only t))
+
+(defun result-failure-p (result)
+  (member (result-status result) '(:unexpected-failure)))
+
+(defun result-error-p (result)
+  (member (result-status result) '(:unhandled-error :invalid-exit-status)))
+
+(defmethod print-object ((object result) stream)
+  (if *print-escape*
+      (call-next-method)
+      (print-unreadable-object (object stream :type t :identity t)
+        (format stream "~A ~A" (result-name object) (result-status object)))))
+
+(defun report-benchmark-status ()
+  (with-standard-io-syntax
+    (with-open-file (stream "benchmark-result.lisp-expr"
+                            :direction :output
+                            :if-exists :supersede)
+      (format stream "~s~%" *results*))))
+
+;;; Benchmark execution runtime support
 
 (defun log-msg (&rest args)
   (format *trace-output* "~&::: ")
@@ -29,29 +95,43 @@
   (terpri *trace-output*)
   (force-output *trace-output*))
 
-(defun required-argument (&optional name)
-  (error "Missing required argument~@[ ~S~]" name))
+(defun start-benchmark ()
+  (unless (eq *benchmark-file* *load-pathname*)
+    (setf *benchmark-file* *load-pathname*)))
 
-(defstruct result
-  (file (required-argument :file) :type pathname :read-only t)
-  (name nil :type (or null string symbol cons) :read-only t)
-  (status (required-argument :status) :type keyword :read-only t)
-  (condition nil :type (or null string condition) :read-only t))
+(defun really-invoke-debugger (condition)
+  (with-simple-restart (continue "Continue")
+    (let ((*invoke-debugger-hook* *invoke-debugger-hook*))
+      (enable-debugger)
+      (invoke-debugger condition))))
 
-(defun result-failure-p (result)
-  (member (result-status result)
-          '(:unexpected-failure :leftover-thread
-            :unexpected-success)))
+(defun fail-benchmark (type name condition)
+  (if (stringp condition)
+      (log-msg "~@<~A ~S ~:_~A~:>"
+               type name condition)
+      (log-msg "~@<~A ~S ~:_due to ~S: ~4I~:_\"~A\"~:>"
+               type name condition condition))
+  (push (make-result :file *benchmark-file*
+                     :name name
+                     :status type
+                     :condition (princ-to-string condition))
+        *results*)
+  (unless (stringp condition)
+    (when *break-on-failure*
+      (really-invoke-debugger condition))))
 
-(defun result-error-p (result)
-  (member (result-status result)
-          '(:unhandled-error :invalid-exit-status)))
+(defun broken-p (broken-on)
+  (sb-impl::featurep broken-on))
 
-(defmethod print-object ((object result) stream)
-  (if *print-escape*
-      (call-next-method)
-      (print-unreadable-object (object stream :type t :identity t)
-        (format stream "~A ~A" (result-name object) (result-status object)))))
+(defun skipped-p (skipped-on)
+  (sb-impl::featurep skipped-on))
+
+;;; Benchmark execution functions and macros
+
+#+TODO-maybe (defun get-time ()
+  #+no (multiple-value-bind (sec nsec) (sb-ext:get-time-of-day)
+         (+ sec (/ nsec 1000000000d0)))
+  (/ (get-internal-real-time) (float internal-time-units-per-second 1.0d0)))
 
 ;;; Repeat calling THUNK until its cumulated runtime, measured using
 ;;; GET-INTERNAL-RUN-TIME, is larger than PRECISION. Repeat this
@@ -69,11 +149,11 @@
 ;;; doesn't distort the result if calling THUNK takes very little time.
 (defun runtime* (thunk repetitions precision)
   (declare (type function thunk))
-  (let ((min-internal-time-units-per-call nil)
-        (min-bytes-consed-per-call nil))
+  (let ((all-internal-time-units-per-call '())
+        (all-bytes-consed-per-call '()))
     (loop repeat repetitions
           do (loop with start = (get-internal-run-time)
-                   with start-consed = (nth-value 3 (sb-impl::time-get-sys-info))
+                   with start-consed = (nth-value 3 (sb-impl::time-get-sys-info)) ; TODO
                    with duration = 0
                    with bytes-consed = 0
                    for n = 1 then (* n 2)
@@ -87,26 +167,27 @@
                                    (/ (float duration) (float total-runs)))
                                  (bytes-consed-per-call
                                    (/ (float bytes-consed) (float total-runs))))
-                             (when (or (not min-internal-time-units-per-call)
-                                       (< internal-time-units-per-call
-                                          min-internal-time-units-per-call))
-                               (setf min-internal-time-units-per-call internal-time-units-per-call
-                                     min-bytes-consed-per-call bytes-consed-per-call)))))
-    (values (/ min-internal-time-units-per-call
-               (float internal-time-units-per-second))
-            (ceiling min-bytes-consed-per-call))))
+                             (push internal-time-units-per-call
+                                   all-internal-time-units-per-call)
+                             (push (ceiling bytes-consed-per-call)
+                                   all-bytes-consed-per-call))))
+    (values
+     (mapcar (lambda (x)
+               (/ x (float internal-time-units-per-second)))
+             all-internal-time-units-per-call)
+     all-bytes-consed-per-call)))
 
-(defmacro runtime (form &key (repetitions 3) (precision 10))
+(defmacro runtime (form &key (repetitions 5) (precision 10))
   `(runtime* (lambda () ,form) ,repetitions ,precision))
 
-(defun call-measuring (thunk)
+(defun call-with-measuring (thunk)
   "TODO(jmoringe): document"
-  (runtime* thunk 3 10))
+  (runtime* thunk 5 10))
 
 (defmacro with-measuring (() &body body)
   "TODO(jmoringe): document"
   `(macrolet ((measuring (&body body)
-                `(call-measuring (lambda () ,@body))))
+                `(call-with-measuring (lambda () ,@body))))
      ,@body))
 
 (defun call-with-parameters (parameter-values thunk)
@@ -159,8 +240,35 @@
       (list ,@(mapcar #'parameter-values parameters))
       (lambda ,(mapcar #'parameter-name parameters) ,@body))))
 
-(with-parameters ((foo (1 2 3 4)) (bar (2 3 4)))
-  (print (list foo bar)))
+(defun note-skipped-benchmark (name)
+  (fail-benchmark
+   :skipped-disabled name
+   "Benchmark disabled for this combination of platform and features"))
+
+(defun call-as-benchmark-body (name parameters thunk)
+  "TODO(jmoringe): document"
+  (declare (type function thunk))
+  (handler-bind ((error (lambda (error)
+                          (fail-benchmark :expected-failure name error)
+                          (return-from call-as-benchmark-body))))
+    (log-msg "~:[Running ~S~:;~2@TRunning ~:*~S~]"
+             parameters name)
+    (multiple-value-bind (runtimes bytes-consed) (funcall thunk)
+      (let ((runtimes (%make-measurement runtimes))
+            (bytes-consed (%make-measurement bytes-consed)))
+        (push (make-parameter-result
+               :file *benchmark-file*
+               :name name
+               :status :success
+               :runtime runtimes
+               :bytes-consed bytes-consed
+               :parameters parameters)
+              *results*)
+        (log-msg "~:[Done ~S~:;~2@TDone ~:*~S~*~] => ~A s; ~D byte~:P [~D measurement~:P]"
+                 parameters name
+                 (measurement-median runtimes)
+                 (measurement-median bytes-consed)
+                 (length (measurement-values runtimes)))))))
 
 (defmacro with-benchmark ((&key
                            name
@@ -168,77 +276,27 @@
                            parameters)
                           &body body)
   (let ((parameters/parsed (mapcar #'parse-parameter-spec parameters))
-        (block-name (gensym))
-        (parameters-var (gensym))
-        (runtime-var (gensym))
-        (bytes-consed-var (gensym)))
-    `(progn
-       #+later (start-benchmark)
-       (cond
-         #+later ((skipped-p ,skipped-on)
-          (fail-test :skipped-disabled ',name "Benchmark disabled for this combination of platform and features"))
-         (t
-          (with-parameters ,parameters
-            (let ((,parameters-var (list ,@(reduce #'append parameters/parsed
-                                                   :key (lambda (parameter)
-                                                          (list `(quote ,(parameter-name parameter))
-                                                                (parameter-name parameter)))))))
-              (block ,block-name
-                (handler-bind ((error (lambda (error)
-                                        (fail-benchmark :expected-failure ',name error)
-                                        (return-from ,block-name))))
-                  (log-msg "Running ~S ~@[@ ~S~]" ',name ,parameters-var)
-                  (multiple-value-bind (,runtime-var ,bytes-consed-var)
-                      (with-measuring () ,@body)
-                    #+later (push (make-result :file *test-file*
-                                               :name (or ',name *test-count*)
-                                               :status :success)
-                                  *results*)
-                    (log-msg "Success ~S ~@[@ ~S~]~%:::   ~A s; ~D byte~:P"
-                             ',name ,parameters-var ,runtime-var ,bytes-consed-var)))))))))))
+        (parameters-var (gensym)))
+    (flet ((make-body ()
+             (if parameters/parsed
+                 `(progn
+                    (log-msg "Running ~S" ',name)
+                    (with-parameters ,parameters
 
-(defun report-test-status ()
-  (with-standard-io-syntax
-    (with-open-file (stream "test-status.lisp-expr"
-                            :direction :output
-                            :if-exists :supersede)
-      (format stream "~s~%" *results*))))
+                      (let ((,parameters-var (list ,@(reduce #'append parameters/parsed
+                                                             :key (lambda (parameter)
+                                                                    (list `(quote ,(parameter-name parameter))
+                                                                          (parameter-name parameter)))))))
+                        (call-as-benchmark-body
+                         ',name ,parameters-var (lambda () (with-measuring () ,@body)))))
 
-(defun start-test ()
-  (unless (eq *test-file* *load-pathname*)
-    (setf *test-file* *load-pathname*)
-    (setf *test-count* 0))
-  (incf *test-count*))
-
-(defun really-invoke-debugger (condition)
-  (with-simple-restart (continue "Continue")
-    (let ((*invoke-debugger-hook* *invoke-debugger-hook*))
-      (enable-debugger)
-      (invoke-debugger condition))))
-
-(defun fail-benchmark (type test-name condition)
-  (if (stringp condition)
-      (log-msg "~@<~A ~S ~:_~A~:>"
-               type test-name condition)
-      (log-msg "~@<~A ~S ~:_due to ~S: ~4I~:_\"~A\"~:>"
-               type test-name condition condition))
-  #+later (push (make-result :file *test-file*
-                     :name (or test-name *test-count*)
-                     :status type
-                     :condition (princ-to-string condition))
-        *results*)
-  #+later
-  (unless (stringp condition)
-    (when (or (and *break-on-failure*
-                   (not (eq type :expected-failure)))
-              *break-on-expected-failure*)
-      (really-invoke-debugger condition))))
-
-(defun expected-failure-p (fails-on)
-  (sb-impl::featurep fails-on))
-
-(defun broken-p (broken-on)
-  (sb-impl::featurep broken-on))
-
-(defun skipped-p (skipped-on)
-  (sb-impl::featurep skipped-on))
+                    (log-msg "Done ~S" ',name))
+                 `(call-as-benchmark-body
+                   ',name '() (lambda () (with-measuring () ,@body))))))
+      `(progn
+         (start-benchmark)
+         (cond
+           ((skipped-p ,skipped-on)
+            (note-skipped-benchmark ',name))
+           (t
+            ,(make-body)))))))

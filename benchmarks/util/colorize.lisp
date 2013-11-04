@@ -4,8 +4,8 @@
 (defvar *color-error* nil)
 
 (unless *no-color*
-  (let ((file #-win32 "colorize-control-codes.lisp"
-              #+win32 "colorize-windows-console.lisp"))
+  (let ((file #-win32 "util/colorize-control-codes.lisp"
+              #+win32 "util/colorize-windows-console.lisp"))
     (handler-case (load file)
       (error (c)
         (setf *color-error*

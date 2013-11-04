@@ -1,4 +1,15 @@
-(cl:use-package :benchmark-util)
+;;;; benchmarks of restart-related functionality
+
+;;;; This software is part of the SBCL system. See the README file for
+;;;; more information.
+;;;;
+;;;; While most of SBCL is derived from the CMU CL system, the test
+;;;; files (like this one) were written from scratch after the fork
+;;;; from CMU CL.
+;;;;
+;;;; This software is in the public domain and is provided with
+;;;; absolutely no warranty. See the COPYING and CREDITS files for
+;;;; more information.
 
 ;;; Benchmark establishing of restarts
 
@@ -71,6 +82,8 @@
       ,@(when condition `((declare (ignorable ,condition))))
       ,@body)))
 
+;;; find-restart
+
 (with-benchmark (:name (find-restart :symbol :without-condition)
                  :parameters ((restart      ('continue 'outermost))
                               (num-clusters (:expt 10 (:iota 4)))))
@@ -78,8 +91,8 @@
     (case restart
       (continue  (measuring (find-restart 'continue)))
       (outermost (measuring (find-restart 'outermost))))))
-(defclass)
-(with-benchmark (:name (compute-restarts :symbol :with-condition)
+
+(with-benchmark (:name (find-restart :symbol :with-condition)
                  :parameters ((restart      ('continue 'outermost))
                               (num-clusters (:expt 10 (:iota 4)))))
   (with-established-restarts (:num-clusters num-clusters
@@ -87,6 +100,23 @@
     (case restart
       (continue  (measuring (find-restart 'continue condition)))
       (outermost (measuring (find-restart 'outermost condition))))))
+
+(with-benchmark (:name (find-restart :instance :without-condition)
+                 :parameters ((restart      ('continue 'outermost))
+                              (num-clusters (:expt 10 (:iota 4)))))
+  (with-established-restarts (:num-clusters num-clusters)
+    (let ((restart-instance (find-restart restart)))
+      (measuring (find-restart restart-instance)))))
+
+(with-benchmark (:name (find-restart :instance :with-condition)
+                 :parameters ((restart      ('continue 'outermost))
+                              (num-clusters (:expt 10 (:iota 4)))))
+  (with-established-restarts (:num-clusters num-clusters
+                              :condition condition)
+    (let ((restart-instance (find-restart restart)))
+      (measuring (find-restart restart-instance condition)))))
+
+;;; compute-restarts
 
 (with-benchmark (:name (compute-restarts :without-condition)
                  :parameters ((num-clusters (:expt 10 (:iota 4)))))
@@ -96,94 +126,5 @@
 (with-benchmark (:name (compute-restarts :with-condition)
                  :parameters ((num-clusters (:expt 10 (:iota 4)))))
   (with-established-restarts (:num-clusters num-clusters
-                              :condition-var condition)
+                              :condition condition)
     (measuring (compute-restarts condition))))
-
-(defun get-time ()
-  #+no (multiple-value-bind (sec nsec) (sb-ext:get-time-of-day)
-         (+ sec (/ nsec 1000000000d0)))
-  (/ (get-internal-real-time) (float internal-time-units-per-second 1.0d0)))
-
-(defun find-some-restarts (depth &rest args
-                                 &key
-                                 symbol?
-                                 symbol-condition?
-                                 restart?
-                                 restart-condition?
-                                 compute-restarts?
-                                 compute-restarts-condition?)
-  (let ((condition (make-instance 'simple-error :format-control "foo")))
-    (restart-case
-        (with-condition-restarts condition
-            (mapcar #'find-restart '(continue retry use-value))
-          (if (zerop depth)
-              (time
-               (let ((start (get-time)))
-                 (let ((r1 (find-restart 'continue))
-                       (r2 (find-restart 'retry))
-                       (r3 (find-restart 'use-value)))
-                   (loop
-                     repeat 10000
-                     do
-                        (when symbol?
-                          (find-restart 'continue)
-                          (find-restart 'retry)
-                          (find-restart 'use-value))
-                        (when symbol-condition?
-                          (find-restart 'continue condition)
-                          (find-restart 'retry condition)
-                          (find-restart 'use-value condition))
-                        (when restart?
-                          (find-restart r1)
-                          (find-restart r2)
-                          (find-restart r3))
-                        (when restart-condition?
-                          (find-restart r1 condition)
-                          (find-restart r2 condition)
-                          (find-restart r3 condition))
-                        (when compute-restarts?
-                          (compute-restarts))
-                        (when compute-restarts-condition?
-                          (compute-restarts condition)))
-                   (- (get-time) start))))
-              (apply #'find-some-restarts (1- depth) args)))
-      (continue (&optional condition)
-        (declare (ignore condition)))
-      (retry ())
-      (use-value (value)
-        (declare (ignore value))))))
-
-;; Warmup
-
-(dolist (which '(:symbol? :symbol-condition? :restart? :restart-condition?
-                 :compute-restarts? :compute-restarts-condition?))
-  (find-some-restarts 20 which t))
-
-#+no (with-open-file (stream (format nil "times-~A.txt" (lisp-implementation-version))
-                             :direction :output
-                             :if-exists :append
-                             :if-does-not-exist :create)
-       (dolist (which '(:symbol? :symbol-condition? :restart? :restart-condition?
-                        :compute-restarts? :compute-restarts-condition?))
-         (format t "~36A~%" which)
-         (dolist (i '(0 1 2 3))
-           (let ((depth (expt 10 i)))
-             (format t "~2@TDepth ~D~%" depth)
-             (format stream "~36F " (find-some-restarts depth which t)))))
-       (terpri stream))
-
-(sb-int:collect ((result))
-  (dolist (which '(:symbol? :symbol-condition? :restart? :restart-condition?
-                   :compute-restarts? :compute-restarts-condition?))
-    (format t "~36A~%" which)
-    (dolist (i '(0 1 2 3))
-      (let ((depth (expt 10 i)))
-        (format t "~2@TDepth ~D~%" depth)
-        (result (list (intern (format nil "~A-~D" which depth) :keyword)
-                      (find-some-restarts depth which t))))))
-  (with-open-file (stream (format nil "times-~A.txt" (lisp-implementation-version))
-                          :direction :output
-                          :if-exists :supersede
-                          :if-does-not-exist :create)
-
-    (print (result) stream)))

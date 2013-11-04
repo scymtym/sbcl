@@ -31,12 +31,12 @@ SBCL_CORE="${TEST_SBCL_CORE:-$SBCL_PWD/../output/sbcl.core}"
 SBCL_RUNTIME="${TEST_SBCL_RUNTIME:-$SBCL_PWD/../src/runtime/sbcl}"
 SBCL_ARGS="${TEST_SBCL_ARGS:---noinform --no-sysinit --no-userinit --noprint --disable-debugger}"
 
-# Scripts that use these variables should quote them.
-TEST_BASENAME="`basename $0`"
-TEST_FILESTEM="$(basename "${TEST_BASENAME}" | sed 's/\.sh$// ; s/\./-/g')"
-: ${TEST_BASEDIR:="$SBCL_PWD"}
-TEST_DIRECTORY="${TEST_BASEDIR}/${TEST_FILESTEM}-$$"
-export TEST_DIRECTORY
+# # Scripts that use these variables should quote them.
+# TEST_BASENAME="`basename $0`"
+# TEST_FILESTEM="$(basename "${TEST_BASENAME}" | sed 's/\.sh$// ; s/\./-/g')"
+# : ${TEST_BASEDIR:="$SBCL_PWD"}
+# TEST_DIRECTORY="${TEST_BASEDIR}/${TEST_FILESTEM}-$$"
+# export TEST_DIRECTORY
 
 # "Ten four" is the closest numerical slang I can find to "OK", so
 # it's the Unix status value that we expect from a successful test.
@@ -47,12 +47,13 @@ export TEST_DIRECTORY
 # returned unless we exit through the intended explicit "test
 # successful" path.
 EXIT_BENCHMARK_WIN=104
-# Shell scripts in this test suite also return 104, so we need a
-# convention for distinguishing successful execution of SBCL in one of
-# our scripts.
-EXIT_LISP_WIN=52
-# Any test that exits with status 1 is an explicit failure.
-EXIT_LOSE=1
+
+# # Shell scripts in this test suite also return 104, so we need a
+# # convention for distinguishing successful execution of SBCL in one of
+# # our scripts.
+# EXIT_LISP_WIN=52
+# # Any test that exits with status 1 is an explicit failure.
+# EXIT_LOSE=1
 
 LANG=C
 LC_ALL=C
@@ -67,74 +68,74 @@ run_sbcl () (
     fi
 )
 
-run_sbcl_with_args () (
-    set -u
-    "$SBCL_RUNTIME" --core "$SBCL_CORE" "$@"
-)
-
-run_sbcl_with_core () (
-    set -u
-    core="$1"
-    shift
-    if [ $# -gt 0 ]; then
-        "$SBCL_RUNTIME" --core "$core" "$@"
-    else
-        "$SBCL_RUNTIME" --core "$core" $SBCL_ARGS
-    fi
-)
-
-# Most tests that run an SBCL have to check whether the child's exit
-# status.  Our convention is that SBCL exits with status
-# $EXIT_LISP_WIN to indicate a successful run; but some tests can't do
-# this (e.g., ones that end in S-L-A-D), or need to indicate some
-# other ways of succeeding.  So this routine takes a test name, the
-# exit status of the child, and then an arbitrary number extra
-# arguments that will be treated as status-code/message pairs for
-# unusual successful ways for the inferior SBCL to exit.  If the exit
-# code of the SBCL isn't found in the status-codes, the calling script
-# will exit with a failure code.
-check_status_maybe_lose () {
-    testname=$1
-    status=$2
-    lose=1
-    if [ $status = $EXIT_LISP_WIN ]; then
-        echo "test $testname ok"
-        lose=0
-    else
-        shift; shift;
-        while [ $# -gt 0 ]; do
-            if [ $status = $1 ]; then
-                shift;
-                echo "test $testname ok $1"
-                lose=0
-                break
-            fi
-            shift; shift
-        done
-    fi
-    if [ $lose = 1 ]; then
-        echo "test $testname failed: $status"
-        exit $EXIT_LOSE
-    fi
-    unset lose
-    unset status
-    unset testname
-}
-
-# Not every test needs to touch the file system, but enough do to have
-# them consistently do so in subdirectories.  Note that such tests
-# should not change their exit action, or do so only very carefully.
-use_test_subdirectory () {
-    if test -d "$TEST_DIRECTORY"
-    then
-        cleanup_test_subdirectory
-    fi
-    mkdir "$TEST_DIRECTORY"
-    cd "$TEST_DIRECTORY"
-    trap "cleanup_test_subdirectory" EXIT
-}
-
-cleanup_test_subdirectory () {
-    cd "$SBCL_PWD"
-    ( set -f; rm -r "$TEST_DIRECTORY" )
-}
+# run_sbcl_with_args () (
+#     set -u
+#     "$SBCL_RUNTIME" --core "$SBCL_CORE" "$@"
+# )
+#
+# run_sbcl_with_core () (
+#     set -u
+#     core="$1"
+#     shift
+#     if [ $# -gt 0 ]; then
+#         "$SBCL_RUNTIME" --core "$core" "$@"
+#     else
+#         "$SBCL_RUNTIME" --core "$core" $SBCL_ARGS
+#     fi
+# )
+#
+# # Most tests that run an SBCL have to check whether the child's exit
+# # status.  Our convention is that SBCL exits with status
+# # $EXIT_LISP_WIN to indicate a successful run; but some tests can't do
+# # this (e.g., ones that end in S-L-A-D), or need to indicate some
+# # other ways of succeeding.  So this routine takes a test name, the
+# # exit status of the child, and then an arbitrary number extra
+# # arguments that will be treated as status-code/message pairs for
+# # unusual successful ways for the inferior SBCL to exit.  If the exit
+# # code of the SBCL isn't found in the status-codes, the calling script
+# # will exit with a failure code.
+# check_status_maybe_lose () {
+#     testname=$1
+#     status=$2
+#     lose=1
+#     if [ $status = $EXIT_LISP_WIN ]; then
+#         echo "test $testname ok"
+#         lose=0
+#     else
+#         shift; shift;
+#         while [ $# -gt 0 ]; do
+#             if [ $status = $1 ]; then
+#                 shift;
+#                 echo "test $testname ok $1"
+#                 lose=0
+#                 break
+#             fi
+#             shift; shift
+#         done
+#     fi
+#     if [ $lose = 1 ]; then
+#         echo "test $testname failed: $status"
+#         exit $EXIT_LOSE
+#     fi
+#     unset lose
+#     unset status
+#     unset testname
+# }
+#
+# # Not every test needs to touch the file system, but enough do to have
+# # them consistently do so in subdirectories.  Note that such tests
+# # should not change their exit action, or do so only very carefully.
+# use_test_subdirectory () {
+#     if test -d "$TEST_DIRECTORY"
+#     then
+#         cleanup_test_subdirectory
+#     fi
+#     mkdir "$TEST_DIRECTORY"
+#     cd "$TEST_DIRECTORY"
+#     trap "cleanup_test_subdirectory" EXIT
+# }
+#
+# cleanup_test_subdirectory () {
+#     cd "$SBCL_PWD"
+#     ( set -f; rm -r "$TEST_DIRECTORY" )
+# }

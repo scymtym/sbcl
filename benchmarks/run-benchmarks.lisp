@@ -1,20 +1,12 @@
-#+#.(cl:if (cl:find-package "ASDF") '(or) '(and))
-(require :asdf)
+(load "util/benchmark-util.lisp")
+(load "util/plotting.lisp")
 
-#+#.(cl:if (cl:find-package "SB-POSIX") '(or) '(and))
-(handler-bind (#+win32 (warning #'muffle-warning))
-  (require :sb-posix))
+(cl:defpackage #:run-benchmarks
+  (:use #:cl #:benchmark-util #:sb-ext))
 
-(load "benchmark-util.lisp")
+(cl:in-package #:run-benchmarks)
 
-(defpackage :run-benchmarks
-    (:use :cl :benchmark-util :sb-ext))
-
-(load "assertoid.lisp")
-
-(in-package run-benchmarks)
-
-(load "colorize.lisp")
+(load "util/colorize.lisp")
 
 (defvar *all-results* nil)
 (defvar *break-on-error* nil)
@@ -24,55 +16,50 @@
 (defvar *report-target* *standard-output*)
 
 (defun run-all ()
-  (let ((args (rest *posix-argv*)))
-    (do ((arg (pop args) (pop args)))
-        ((null arg))
-      (cond ((string= arg "--break-on-failure")
-             (setf *break-on-error* t)
-             (setf test-util:*break-on-failure* t))
-            ((string= arg "--break-on-expected-failure")
-             (setf test-util:*break-on-expected-failure* t))
-            ((string= arg "--report-skipped-tests")
-             (setf *report-skipped-tests* t))
-            ((string= arg "--report-style")
-             (let* ((name (or (pop args)
-                              (error "~@<Missing argument for ~A option.~@:>"
-                                     arg)))
-                    (style (intern (string-upcase name) :keyword)))
-               (setf *report-style* style)))
-            ((string= arg "--report-target")
-             (setf *report-target*
-                   (or (pop args)
-                       (error "~@<Missing argument for ~A option.~@:>"
-                              arg))))
-            ((string= arg "--report-skipped-tests")
-             (setf *report-skipped-tests* t))
-            ((string= arg "--no-color")) ; TODO
-            (t
-             (push (truename (parse-namestring arg)) *accept-files*)))))
-  (pure-runner (pure-load-files) #'load-test)
-  (pure-runner (pure-cload-files) #'cload-test)
-  (impure-runner (impure-load-files) #'load-test)
-  (impure-runner (impure-cload-files) #'cload-test)
-  #-win32 (impure-runner (sh-files) #'sh-test)
-  (report *all-results*)
-  (sb-ext:exit :code (if (unexpected-failures *all-results*)
-                         1
-                         104)))
+  (let ((compare-to nil))
+    ;; Parse commandline options.
+    (let ((args (rest *posix-argv*)))
+      (flet ((missing-argument (option)
+               (error "~@<Missing argument for ~A option.~@:>"
+                      option)))
+        (do ((arg (pop args) (pop args))) ((null arg))
+          (cond #+later ((string= arg "--break-on-failure")
+                         (setf *break-on-error* t)
+                         (setf test-util:*break-on-failure* t))
+                #+later ((string= arg "--report-skipped-tests")
+                         (setf *report-skipped-tests* t))
+                ((string= arg "--report-style")
+                 (let* ((name (or (pop args) (missing-argument arg)))
+                        (style (intern (string-upcase name) :keyword)))
+                   (setf *report-style* style)))
+                ((string= arg "--report-target")
+                 (setf *report-target*
+                       (or (pop args) (missing-argument arg))))
+                ((string= arg "--compare-to")
+                 (setf compare-to (or (pop args) (missing-argument arg))))
+                ((string= arg "--no-color")) ; TODO
+                (t
+                 (push (truename (parse-namestring arg)) *accept-files*))))))
 
-(defun pure-runner (files test-fun)
-  (format t "// Running pure tests (~a)~%" test-fun)
-  (let ((*package* (find-package :cl-user))
-        (*results* '()))
-    (setup-cl-user)
-    (dolist (file files)
-      (when (accept-test-file file)
-        (format t "// Running ~a~%" file)
-        (restart-case
-            (handler-bind ((error (make-error-handler file)))
-              (eval (funcall test-fun file)))
-          (skip-file ()))))
-    (append-results)))
+    (benchmark-runner (benchmark-files) #'load-benchmark)
+
+    (ensure-directories-exist "results/")
+    (with-open-file (stream (format nil "results/~A.lisp-expr" (lisp-implementation-version))
+                            :direction         :output
+                            :if-does-not-exist :create
+                            :if-exists         :supersede)
+      (write (list *all-results*
+                   :version (lisp-implementation-version))
+             :stream stream))
+
+    (apply #'report (list *all-results*
+                          :version (lisp-implementation-version)) ; TODO proper top-level structure
+           (when compare-to
+             (list :compare-to compare-to)))
+
+    (sb-ext:exit :code (if (unexpected-failures *all-results*)
+                           1
+                           104))))
 
 (defun run-in-child-sbcl (load-forms forms)
   ;; We used to fork() for POSIX platforms, and use this for Windows.
@@ -94,31 +81,29 @@
       :output sb-sys:*stdout*
       :input #-win32 devnull #+win32 sb-sys:*stdin*))))
 
-(defun run-impure-in-child-sbcl (test-file test-code)
+(defun run-benchmarks-in-child-sbcl (test-file test-code)
   (run-in-child-sbcl
-    `((load "test-util")
-      (load "assertoid")
-      (defpackage :run-tests
-        (:use :cl :test-util :sb-ext)))
+    `((load "util/benchmark-util")
+      #+TODO-probably-not-needed (load "assertoid")
+      (cl:defpackage #:run-benchmarks
+        (:use #:cl #:benchmark-util #:sb-ext)))
 
-    `((in-package :cl-user)
-      (use-package :test-util)
-      (use-package :assertoid)
-      (setf test-util:*break-on-failure* ,test-util:*break-on-failure*)
-      (setf test-util:*break-on-expected-failure*
-            ,test-util:*break-on-expected-failure*)
+    `((cl:in-package #:cl-user)
+      (cl:use-package '#:benchmark-util)
+      #+TODO-probably-not-needed (use-package :assertoid)
+      #+later (setf test-util:*break-on-failure* ,test-util:*break-on-failure*)
       (let ((file ,test-file)
-            (*break-on-error* ,run-tests::*break-on-error*))
-        (declare (special *break-on-error*))
+        #+later (*break-on-error* ,run-tests::*break-on-error*))
+        #+later (declare (special *break-on-error*))
         (format t "// Running ~a~%" file)
         (restart-case
             (handler-bind
                 ;; TODO use make-error-handler
                 ((error (lambda (condition)
                           (push (make-result :file file :status :unhandled-error)
-                                test-util:*results*)
-                          (cond (*break-on-error*
-                                 (test-util:really-invoke-debugger condition))
+                                benchmark-util:*results*)
+                          (cond #+no (*break-on-error*
+                                 (benchmark-util:really-invoke-debugger condition))
                                 (t
                                  (format *error-output* "~&Unhandled ~a: ~a~%"
                                          (type-of condition) condition)
@@ -126,21 +111,28 @@
                           (invoke-restart 'skip-file))))
               ,test-code)
           (skip-file ()
-            (format t ">>>~a<<<~%" test-util:*results*)))
-        (test-util:report-test-status)
+            (format t ">>>~a<<<~%" benchmark-util:*results*)))
+        (benchmark-util:report-benchmark-status)
         (sb-ext:exit :code 104)))))
 
-(defun impure-runner (files test-fun)
-  (format t "// Running impure tests (~a)~%" test-fun)
-  (let ((*package* (find-package :cl-user)))
+(defun setup-cl-user ()
+  (cl:use-package '#:benchmark-util)
+  #+TODO-probably-not-needed (use-package :assertoid))
+
+(defun load-benchmark (file)
+  `(load ,file))
+
+(defun benchmark-runner (files test-fun)
+  (format t "// Running benchmarks (~a)~%" test-fun)
+  (let ((*package* (find-package '#:cl-user)))
     (setup-cl-user)
     (dolist (file files)
       (when (accept-test-file file)
         (force-output)
-        (let ((exit-code (run-impure-in-child-sbcl file
-                                                   (funcall test-fun file))))
+        (let ((exit-code (run-benchmarks-in-child-sbcl
+                          file (funcall test-fun file))))
           (if (= exit-code 104)
-              (with-open-file (stream "test-status.lisp-expr"
+              (with-open-file (stream "benchmark-result.lisp-expr"
                                       :direction :input
                                       :if-does-not-exist :error)
                 (append-results
@@ -149,61 +141,24 @@
               (push (make-result :file file :status :invalid-exit-status)
                     *all-results*)))))))
 
-(defun make-error-handler (file)
+#+TODO-not-used (defun make-error-handler (file)
   (lambda (condition)
     (push (make-result :file file :status :unhandled-error) *results*)
     (cond (*break-on-error*
-           (test-util:really-invoke-debugger condition))
+           (benchmark-util:really-invoke-debugger condition))
           (t
            (format *error-output* "~&Unhandled ~a: ~a~%"
                    (type-of condition) condition)
            (sb-debug:print-backtrace)))
     (invoke-restart 'skip-file)))
 
-(defun setup-cl-user ()
-  (use-package :test-util)
-  (use-package :assertoid))
-
-(defun load-test (file)
-  `(load ,file))
-
-(defun cload-test (file)
-  `(let ((compile-name (compile-file-pathname ,file)))
-     (unwind-protect
-          (progn
-            (compile-file ,file)
-            (load compile-name))
-       (ignore-errors
-         (delete-file compile-name)))))
-
-(defun sh-test (file)
-  ;; What? No SB-POSIX:EXECV?
-  `(let ((process (sb-ext:run-program "/bin/sh"
-                                      (list (native-namestring ,file))
-                                      :output *error-output*)))
-     (let ((*results* '()))
-       (test-util:report-test-status))
-     (sb-ext:exit :code (process-exit-code process))))
-
 (defun accept-test-file (file)
   (if *accept-files*
       (find (truename file) *accept-files* :test #'equalp)
       t))
 
-(defun pure-load-files ()
-  (directory "*.pure.lisp"))
-
-(defun pure-cload-files ()
-  (directory "*.pure-cload.lisp"))
-
-(defun impure-load-files ()
-  (directory "*.impure.lisp"))
-
-(defun impure-cload-files ()
-  (directory "*.impure-cload.lisp"))
-
-(defun sh-files ()
-  (directory "*.test.sh"))
+(defun benchmark-files ()
+  (directory "*.benchmark.lisp"))
 
 ;;; Result handling
 
@@ -223,12 +178,32 @@
                          :skipped-disabled)))
              results))
 
+(defgeneric load-result (result-designator))
+
+(defmethod load-result ((result-designator string))
+  (load-result (make-pathname :directory '(:relative "results")
+                              :name result-designator
+                              :type "lisp-expr")))
+
+(defmethod load-result ((result-designator pathname))
+  (with-open-file (stream result-designator)
+    (with-standard-io-syntax
+      (read stream))))
+
 ;;; Result reporting
 
-(defun report (results &key (style *report-style*) (target *report-target*))
-  (report-using-style results style target))
+(defun report (results
+               &key
+               (style *report-style*)
+               (target *report-target*)
+               compare-to)
+  (if compare-to
+      (compare-using-style results (load-result compare-to) style target)
+      (report-using-style results style target)))
 
 (defgeneric report-using-style (results style target))
+
+(defgeneric compare-using-style (new-results old-results style target))
 
 (defmethod report-using-style ((results t) (style t) (target string))
   (report-using-style results style (parse-namestring target)))
@@ -286,6 +261,8 @@
           (t
            (format target "All tests succeeded~%")))))
 
+;;; Sexp style
+
 (defun write-universal-time/iso (&optional (time (get-universal-time))
                                            (stream t))
   (multiple-value-bind
@@ -321,3 +298,11 @@
          :features ,*features*
          :results ,(mapcar #'one-result results))
        target))))
+
+;;; Plot style
+
+(defmethod report-using-style (results (style (eql :plot)) (target stream))
+  (benchmark-util::plot (list results)))
+
+(defmethod compare-using-style (new-results old-results (style (eql :plot)) (target stream))
+  (benchmark-util::plot (list new-results old-results)))

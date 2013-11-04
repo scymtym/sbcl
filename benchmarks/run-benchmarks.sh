@@ -11,11 +11,11 @@
 # absolutely no warranty. See the COPYING and CREDITS files for
 # more information.
 
-if [ $1 = "--help" ]; then
+if [ "$1" = "--help" ]; then
   cat <<EOF
-Run the regression tests in this directory.
+Run the benchmarks in this directory.
 
-Usage: run-tests.sh [OPTIONS] [files]
+Usage: run-benchmarks.sh [OPTIONS] [files]
 
 Valid options are as follows:
 
@@ -23,23 +23,26 @@ Valid options are as follows:
                          test results. Supported STYLEs: describe,
                          sexp.
 
-  --report-target TARGET Controls where the test result report should
-                         go. When supplied, TARGET is treated as the
-                         name of a file into which the report should
-                         be written. When the option is omitted, the
-                         report is written to standard output.
+  --report-target TARGET Controls where the benchmark result report
+                         should go. When supplied, TARGET is treated
+                         as the name of a file into which the report
+                         should be written. When the option is
+                         omitted, the report is written to standard
+                         output.
 
   --no-color             Disable coloring of results.
 
-If no test files are specified, runs all tests.
+If no benchmark files are specified, runs all benchmarks.
 EOF
+  exit 0
+fi
 
 . ./subr.sh
 
 echo /running benchmarks on \'$SBCL_RUNTIME --core $SBCL_CORE $SBCL_ARGS\'
 
 tenfour () {
-    if [ $1 = $EXIT_TEST_WIN ]; then
+    if [ $1 = $EXIT_BENCHMARK_WIN ]; then
         echo ok
     else
         echo test failed, expected $EXIT_BENCHMARK_WIN return code, got $1

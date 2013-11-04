@@ -40,6 +40,11 @@ or the IRC channel #sbcl@freenode.net.
 Coding Style
 ============
 
+Packages:
+
+* Package names package vs. "PACKAGE" vs. :package vs. #:package
+* Symbols symbol vs. "SYMBOL" vs. :symbol vs. #:symbol
+
 See also PRINCIPLES and TLA files.
 
 Most of the style hints in the Lisp FAQ apply.
@@ -87,10 +92,10 @@ usage fussiness:
 	(defun primify (x) ..)
     instead of telling the reader that you're going to tell him what
     the function does, e.g.
-	;;; PRIMIFY returns the first prime number greater than or 
+	;;; PRIMIFY returns the first prime number greater than or
 	;;; equal to X.
 	(defun primify (x) ..)
-    or 
+    or
 	;;; When you call this function on X, you get back the first
 	;;; prime number greater than or equal to X.
 	(defun primify (x) ..)
@@ -122,14 +127,14 @@ which are not good examples to follow:
     many places, and arrange for the FOO feature to be set once and
     only once -- probably in make-config.sh. (That way future
     maintainers won't curse you.)
-  * putting the defined symbol, and information about whether it's 
+  * putting the defined symbol, and information about whether it's
     exported or not, into the comments around the definition of the symbol;
   * naming anything DO-FOO if it isn't an iteration macro
-  * not using a consistent abbreviation style in global names (e.g. 
-    naming some things DEFINE-FOO and other things DEF-BAR, with 
+  * not using a consistent abbreviation style in global names (e.g.
+    naming some things DEFINE-FOO and other things DEF-BAR, with
     no rule to determine whether the abbreviation is used).
   * using lots of single-colon package prefixes (distracting and hard
-    to read, and obstacles to reaching package nirvana where 
+    to read, and obstacles to reaching package nirvana where
     package dependencies are a directed acyclic graph) or even
     double-colon package prefixes (hard to understand and hard
     to maintain). (One exception: I've sometimes been tempted to
@@ -140,3 +145,42 @@ which are not good examples to follow:
 Many of these are common in the code inherited from CMUCL. We've
 eliminated them in some places, but there's a *lot* of code inherited
 from CMUCL..
+
+Writing Benchmarks
+==================
+
+In SBCL, benchmarks are organized similarly to tests (described in the
+`Writing Tests`_ section).
+
+New benchmarks should be added in the appropriate file in the
+``benchmarks`` directory.
+
+All benchmarks have to use the ``WITH-BENCHMARK`` macro to associate a
+unique name with each test and record benchmark results with that
+name. The macro also prevents a whole file of benchmarks from going up
+in smoke when a single benchmark signals an error. The basic syntax
+is::
+
+  (with-benchmark (:name NAME)
+    (measuring BODY))
+
+where ``NAME`` is either a symbol or a list of symbols. All of these
+symbols have to be in one of the packages ``KEYWORD``, ``CL`` or
+``SB-*`` to make test names ``READ`` able in a different SBCL image.
+
+It is often desirable to analyze how the runtime (or memory
+allocation) of a piece of code scales in relation to some
+parameter. For this purpose, the ``WITH-BENCHMARK`` macro accepts the
+``:parameters`` keyword parameter::
+
+  (with-benchmark (:name name
+                   :parameters ((input-size (:expt 10 (:iota 4)))))
+    (measuring BODY-USING-INPUT-SIZE))
+
+The above example causes ``BODY-USING-INPUT-SIZE`` to run four times
+with ``input-size`` successively bound to 1, 10, 100 and 1000
+respectively.
+
+If possible, benchmarks should not signal warnings during compilation
+or runtime and should not produce output in order to not clutter the
+output of the benchmark runner and make problems easier to identify.
