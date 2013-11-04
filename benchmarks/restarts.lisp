@@ -1,24 +1,32 @@
+(cl:use-package :benchmark-util)
+
 ;;; Benchmark establishing of restarts
 
 (with-benchmark (:name (restart-bind)
-                 :parameters (num-clusters))
+                 :parameters ((num-clusters (:expt 10 (:iota 5)))))
   (labels ((clusters (remaining)
              (unless (zerop remaining)
-               (restart-bind ()
+               (restart-bind ((continue (lambda (&optional condition)
+                                          (declare (ignore condition))))
+                              (retry (lambda ()))
+                              (use-value (lambda (value)
+                                           (declare (ignore value)))))
                  (clusters (1- remaining))))))
-    (clusters num-clusters)))
+    (measuring (clusters num-clusters))))
 
 (with-benchmark (:name (restart-case)
-                 :parameters (num-clusters))
+                 :parameters ((num-clusters (:expt 10 (:iota 5)))))
   (labels ((clusters (remaining)
              (unless (zerop remaining)
-               (restart-case nil
+               (restart-case (clusters (1- remaining))
                  (continue (&optional condition)
                    (declare (ignore condition)))
                  (retry ())
                  (use-value (value)
                    (declare (ignore value)))))))
-    (clusters num-clusters)))
+    (measuring (clusters num-clusters))))
+
+;;; Benchmark finding established restarts
 
 ;; Call THUNK with TODO
 ;;
@@ -27,10 +35,14 @@
 (defun call-with-established-restarts (num-clusters condition? thunk)
   (let ((condition (when condition?
                      (make-instance 'simple-error :format-control "foo"))))
-    (labels ((clusters (remaining)
+    (labels ((call-thunk ()
+               (if condition
+                   (funcall thunk condition)
+                   (funcall thunk)))
+             (clusters (remaining)
                (flet ((next ()
                         (if (zerop remaining)
-                            (funcall thunk)
+                            (call-thunk)
                             (clusters (1- remaining)))))
                  (restart-case
                      (if condition
@@ -43,46 +55,49 @@
                    (retry ())
                    (use-value (value)
                      (declare (ignore value)))))))
-      (clusters num-clusters))))
+      (if (zerop num-clusters)
+          (call-thunk)
+          (restart-case
+              (clusters num-clusters)
+            (outermost ()))))))
 
-(call-with-established-restarts 10 nil (lambda () (print (compute-restarts))))
+(defmacro with-established-restarts ((&key
+                                      (num-clusters 1000)
+                                      (condition    nil))
+                                     &body body)
+  `(call-with-established-restarts
+    ,num-clusters ,(when condition t)
+    (lambda (,@(when condition `(,condition)))
+      ,@(when condition `((declare (ignorable ,condition))))
+      ,@body)))
 
-(time
- (let ((start (get-time)))
-   (let ((r1 (find-restart 'continue))
-         (r2 (find-restart 'retry))
-         (r3 (find-restart 'use-value)))
-     (loop
-       repeat 10000
-       do
-          (when symbol?
-            (find-restart 'continue)
-            (find-restart 'retry)
-            (find-restart 'use-value))
-          (when symbol-condition?
-            (find-restart 'continue condition)
-            (find-restart 'retry condition)
-            (find-restart 'use-value condition))
-          (when restart?
-            (find-restart r1)
-            (find-restart r2)
-            (find-restart r3))
-          (when restart-condition?
-            (find-restart r1 condition)
-            (find-restart r2 condition)
-            (find-restart r3 condition))
-          (when compute-restarts?
-            (compute-restarts))
-          (when compute-restarts-condition?
-            (compute-restarts condition)))
-     (- (get-time) start))))
+(with-benchmark (:name (find-restart :symbol :without-condition)
+                 :parameters ((restart      ('continue 'outermost))
+                              (num-clusters (:expt 10 (:iota 4)))))
+  (with-established-restarts (:num-clusters num-clusters)
+    (case restart
+      (continue  (measuring (find-restart 'continue)))
+      (outermost (measuring (find-restart 'outermost))))))
+(defclass)
+(with-benchmark (:name (compute-restarts :symbol :with-condition)
+                 :parameters ((restart      ('continue 'outermost))
+                              (num-clusters (:expt 10 (:iota 4)))))
+  (with-established-restarts (:num-clusters num-clusters
+                              :condition condition)
+    (case restart
+      (continue  (measuring (find-restart 'continue condition)))
+      (outermost (measuring (find-restart 'outermost condition))))))
 
-(with-benchmark (:name (find-restart :symbol)
-                 :parameters ((num-clusters )
-                              (num-restarts ))))
+(with-benchmark (:name (compute-restarts :without-condition)
+                 :parameters ((num-clusters (:expt 10 (:iota 4)))))
+  (with-established-restarts (:num-clusters num-clusters)
+    (measuring (compute-restarts))))
 
-
-(require 'sb-sprof)
+(with-benchmark (:name (compute-restarts :with-condition)
+                 :parameters ((num-clusters (:expt 10 (:iota 4)))))
+  (with-established-restarts (:num-clusters num-clusters
+                              :condition-var condition)
+    (measuring (compute-restarts condition))))
 
 (defun get-time ()
   #+no (multiple-value-bind (sec nsec) (sb-ext:get-time-of-day)
