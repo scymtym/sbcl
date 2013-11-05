@@ -17,11 +17,11 @@ set output \"~A.png\"
 
 set datafile separator ','
 
-set bmargin at screen 0.1
+set bmargin at screen 0.15
 
 set key left
 
-set xtic rotate by -10
+set xtic rotate by -20
 
 #set yrange [0:]
 set ylabel \"Runtime [seconds]\"
