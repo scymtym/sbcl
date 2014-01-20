@@ -1,0 +1,6 @@
+defmacro
+  http://www.lispworks.com/documentation/HyperSpec/Body/m_defmac.htm#defmacro
+macro lambda list:
+  http://www.lispworks.com/documentation/HyperSpec/Body/03_dd.htm
+ordinary lambda list
+  http://www.lispworks.com/documentation/HyperSpec/Body/03_da.htm
