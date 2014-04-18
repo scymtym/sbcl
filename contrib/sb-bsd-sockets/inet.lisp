@@ -5,7 +5,7 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defclass inet-socket (socket)
     ((family :initform sockint::AF-INET))
-    (:documentation "Class representing TCP and UDP sockets.
+    (:documentation "Class representing TCP and UDP over IPv4 sockets.
 
 Examples:
 
