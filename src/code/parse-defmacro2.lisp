@@ -30,6 +30,19 @@
                 #:defmacro-error))
 (in-package #:defmacro-test2)
 
+;; TODO move to appropriate location
+(defglobal *ordinary-lambda-list-sections*
+    (mapcar #'find-lambda-list-section '(:required :optional :rest :key :aux)))
+
+(defglobal *macro-lambda-list-sections*
+    (mapcar #'find-lambda-list-section '(:whole :required :optional :rest :key :environment)))
+
+(defglobal *generic-function-lambda-list-sections*
+    (mapcar #'find-lambda-list-section '(:required :optional :rest :key)))
+
+(defglobal *method-lambda-list-sections*
+    (mapcar #'find-lambda-list-section '(:required/specializer :optional :rest :key)))
+
 ;;; Lambda list sections
 
 (defstruct (lambda-list-section (:constructor make-lambda-list-section (name keywords guard parser
@@ -43,7 +56,7 @@
 
 ;; TODO how does this relate to cl:lambda-list-keywords?
 (declaim (type list #|of lambda-list-section|# *lambda-list-sections*))
-(defvar *lambda-list-sections* '()
+(defglobal *lambda-list-sections* '()
   #+sb-doc
   "Known lambda list sections.")
 
@@ -52,7 +65,7 @@
         :test #'member
         :key #'lambda-list-section-keywords))
 
-(defun find-lambda-list-section (name)
+(defun find-lambda-list-section (name) ; TODO &key if-does-not-exist
   (find name *lambda-list-sections*
         :key #'lambda-list-section-name))
 
