@@ -27,13 +27,28 @@
   (typecase name
     (list
      (unless (legal-fun-name-p name)
-       (compiler-error "illegal function name: ~S" name)))
+       (compiler-error "~@<Illegal function name: ~S.~@:>" name)))
     (symbol
      (when (eq (info :function :kind name) :special-form)
-       (compiler-error "Special form is an illegal function name: ~S" name)))
+       (compiler-error "~@<Special form is an illegal function name: ~S.~@:>"
+                       name)))
     (t
-     (compiler-error "illegal function name: ~S" name)))
-  (values))
+     (compiler-error "~@<Illegal function name: ~S.~@:>" name)))
+  name)
+
+(defun check-variable-name (name &optional (context "local variable") )
+  (cond
+    ((sb!impl::legal-variable-name-p name)
+     name)
+    ((keywordp name)
+     (compiler-error "~@<~S is a keyword, and cannot be used as a ~
+                      ~A.~@:>"
+                     name context))
+    (t
+     (compiler-error "~@<~S is not a symbol, and cannot be used as a ~
+                      ~A.~@:>"
+                     name context)))
+  name)
 
 ;;; Record a new function definition, and check its legality.
 (defun proclaim-as-fun-name (name)
