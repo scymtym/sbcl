@@ -900,6 +900,9 @@
 
 ;;;; various operations on names
 
+(defun legal-variable-name-p (name)
+  (typep name '(and symbol (not keyword))))
+
 ;;; Is NAME a legal function name?
 (declaim (inline legal-fun-name-p))
 (defun legal-fun-name-p (name)
