@@ -413,7 +413,20 @@ of SBCL which maintained the CMU-CL-style split into two packages.)"
                "LAMBDA-APPLICATION-INFO" "NAMED-APPLICATION-INFO"
                "MACROID-INFO"
                "MACRO-INFO" "COMPILER-MACRO-INFO" "SYMBOL-MACRO-INFO"
-               "SETQ-WITH-SYMBOL-MACROS-INFO"))
+               "SETQ-WITH-SYMBOL-MACROS-INFO"
+
+               "WALK-FORMS"
+               "WALK-FORMS/RECONSTITUTE"
+
+               "CLASSIFY-VARIABLE-FORM"
+               "CLASSIFY-APPLICATION-FORM"
+               "NOTE-LEXICAL-VARIABLE"
+               "NOTE-LEXICAL-FUNCTION"
+               "NOTE-LEXICAL-MACRO"
+               "NOTE-LEXICAL-SYMBOL-MACRO"
+
+               "EXPAND-MACRO"
+               "RECONSTITUTE"))
 
    #s(sb-cold:package-data
       :name "SB!DEBUG"
@@ -660,6 +673,20 @@ like *STACK-TOP-HINT* and unsupported stuff like *TRACED-FUN-LIST*."
                "GENERATION-NUMBER-OF-GCS"
                "GENERATION-NUMBER-OF-GCS-BEFORE-PROMOTION"
                "GC-LOGFILE"
+
+               ;; Code walking protocol
+               ;; WARNING: experimental; subject to change
+               ;; TODO would this be better than exporting from SB-C?
+               ;;"WALK-FORMS"
+               ;;"WALK-FORMS/RECONSTITUTE"
+               ;;"CLASSIFY-VARIABLE-FORM"
+               ;;"CLASSIFY-APPLICATION-FORM"
+               ;;"NOTE-LEXICAL-VARIABLE"
+               ;;"NOTE-LEXICAL-FUNCTION"
+               ;;"NOTE-LEXICAL-MACRO"
+               ;;"NOTE-LEXICAL-SYMBOL-MACRO"
+               ;;"EXPAND-MACRO"
+               ;;"RECONSTITUTE"
 
                ;; Stack allocation control
                "*STACK-ALLOCATE-DYNAMIC-EXTENT*"

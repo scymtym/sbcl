@@ -498,6 +498,7 @@
  ("src/compiler/dump")
 
  ("src/compiler/special-operators")
+ ("src/compiler/walk-forms")
  ("src/compiler/main") ; needs DEFSTRUCT FASL-OUTPUT from dump.lisp
  ("src/compiler/xref")
  ("src/code/source-location")
