@@ -492,6 +492,7 @@
  ("src/compiler/dump")
 
  ("src/compiler/ir1report") ; for COMPILER-ERROR-CONTEXT
+ ("src/compiler/special-operators")
  ("src/compiler/main") ; needs DEFSTRUCT FASL-OUTPUT from dump.lisp
  ("src/compiler/xref")
  ("src/compiler/target-main" :not-host)
