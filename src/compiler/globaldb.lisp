@@ -362,7 +362,7 @@
 ;;; the kind of functional object being described. If null, NAME isn't
 ;;; a known functional object.
 (define-info-type (:function :kind)
-  :type-spec (member nil :function :macro :special-form)
+  :type-spec (member nil :function :macro :special-form :special-operator) ; TODO remove :special-form
   ;; I'm a little confused what the correct behavior of this default
   ;; is. It's not clear how to generalize the FBOUNDP expression to
   ;; the cross-compiler. As far as I can tell, NIL is a safe default
@@ -457,7 +457,11 @@
   :type-spec (or function null))
 
 ;;; a function which converts this special form into IR1
-(define-info-type (:function :ir1-convert) :type-spec (or function null))
+(define-info-type (:function :ir1-convert) :type-spec (or function null)) ; TODO remove
+
+;;; a SPECIAL-OPERATOR-INFO instance describing the special operator
+(define-info-type (:function :special-operator-info)
+  :type-spec special-operator-info)
 
 ;;; If a function is "known" to the compiler, then this is a FUN-INFO
 ;;; structure containing the info used to special-case compilation.

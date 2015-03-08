@@ -402,7 +402,18 @@ of SBCL which maintained the CMU-CL-style split into two packages.)"
                "WITH-COMPILER-ERROR-RESIGNALLING"
                "WITH-SOURCE-LOCATION"
 
-               "BRANCH-IF"))
+               "BRANCH-IF"
+
+               ;; Code walking protocol
+               ;; WARNING: experimental; subject to change
+               "LEAF-INFO"
+               "VARIABLE-INFO" "SELF-EVALUATING-INFO" "%LEAF-INFO"
+               "SPECIAL-OPERATOR-INFO"
+               "APPLICATION-INFO"
+               "LAMBDA-APPLICATION-INFO" "NAMED-APPLICATION-INFO"
+               "MACROID-INFO"
+               "MACRO-INFO" "COMPILER-MACRO-INFO" "SYMBOL-MACRO-INFO"
+               "SETQ-WITH-SYMBOL-MACROS-INFO"))
 
    #s(sb-cold:package-data
       :name "SB!DEBUG"

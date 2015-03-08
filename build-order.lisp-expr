@@ -497,6 +497,7 @@
  ;; Compiling this requires fop definitions from code/fop.lisp and
  ("src/compiler/dump")
 
+ ("src/compiler/special-operators")
  ("src/compiler/main") ; needs DEFSTRUCT FASL-OUTPUT from dump.lisp
  ("src/compiler/xref")
  ("src/code/source-location")
