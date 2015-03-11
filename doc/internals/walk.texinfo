@@ -1,0 +1,58 @@
+@node Walk
+@comment  node-name,  next,  previous,  up
+@chapter walk
+
+@menu
+* Walk Overview::
+* Special Operators::
+* The walk-forms Function::
+* Interaction with Environments::
+* Code Walking Hooks::
+@end menu
+
+@node Walk Overview
+@section Walk Overview
+
+The code walking machinery, with its entry-point @code{WALK-FORMS}, is
+the first phase of the compiler but can also be used in isolation, for
+example for implementing source-level transformations or static
+analysis.
+
+Code walking Common Lisp forms has to handle the following kinds of forms
+
+@itemize
+@item Variable and constant references (atom)
+@item @code{((lambda ...) ...)} forms
+@item Function calls
+@item Special operators
+@item Macro and compiler-macro applications
+@end itemize
+
+For the first three categories, the walker can call the TODO-callback
+function and stop. The remaining two are more complicated.
+
+For special operators, the walker has to know which syntactic components
+are intended for evaluation and thus have to be walked recursively.
+
+Macros and compiler-macros have to be expanded and the expansions have
+to be walked.
+
+@node Special Operators
+@section Special Operators
+
+TODO @code{SPECIAL-OPERATOR-INFO}, @code{FIND-SPECIAL-OPERATOR-INFO}
+
+@node The walk-forms Function
+@section The walk-forms Function
+
+TODO @code{WALK-FORMS}
+
+@node Interaction with Environments
+@section Interaction with Environments
+
+TODO
+
+@node Code Walking Hooks
+@section Code Walking Hooks
+
+TODO @code{ADD-HOOK-PROCESSING}

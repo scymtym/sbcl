@@ -22,7 +22,7 @@ MODULES=':sb-md5 :sb-queue :sb-concurrency :sb-rotate-byte :sb-grovel \
 PACKAGES=":COMMON-LISP :SB-ALIEN :SB-DEBUG :SB-EXT :SB-GRAY :SB-MOP \
           :SB-PCL :SB-SYS :SB-SEQUENCE :SB-UNICODE \
           :SB-PROFILE :SB-THREAD :SB-MD5 :SB-QUEUE :SB-ROTATE-BYTE  \
-          :SB-SPROF :SB-BSD-SOCKETS :SB-COVER :SB-POSIX :SB-CONCURRENCY"
+          :SB-SPROF :SB-BSD-SOCKETS :SB-COVER :SB-POSIX :SB-CONCURRENCY :SB-C"
 
 # SBCL_SYSTEM is an optional argument to this make program. If this
 # variable is set, its contents are used as the command line for
