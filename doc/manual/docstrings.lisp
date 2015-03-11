@@ -54,7 +54,7 @@
 (defvar *texinfo-variables*)
 (defvar *documentation-package*)
 
-(defparameter *undocumented-packages* '(sb-pcl sb-int sb-kernel sb-sys sb-c))
+(defparameter *undocumented-packages* '(sb-pcl sb-int sb-kernel sb-sys ))
 
 (defparameter *documentation-types*
   '(compiler-macro
@@ -519,13 +519,13 @@ variables if the symbol in question is contained in symbols
 ;;; lisp sections
 
 (defun lisp-section-p (line line-number lines)
-  "Returns T if the given LINE looks like start of lisp code --
-ie. if it starts with whitespace followed by a paren or
-semicolon, and the previous line is empty"
+  "Returns T if the given LINE looks like start of lisp code -- ie. if
+it starts with whitespace followed by a paren, semicolon or colon, and
+the previous line is empty"
   (let ((offset (indentation line)))
     (and offset
          (plusp offset)
-         (find (find-if-not #'whitespacep line) "(;")
+         (find (find-if-not #'whitespacep line) "(;:")
          (empty-p (1- line-number) lines))))
 
 (defun collect-lisp-section (lines line-number)
