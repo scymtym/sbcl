@@ -7,6 +7,65 @@
 
 (cl:in-package "SB!C")
 
+;; copied from the PCL walker; TODO keep or delete?
+
+;;;; handling of special forms
+
+;;; Here are some comments from the original PCL on the difficulty of
+;;; doing this portably across different CLTL1 implementations. This
+;;; is no longer directly relevant because this code now only runs on
+;;; SBCL, but the comments are retained for culture: they might help
+;;; explain some of the design decisions which were made in the code.
+;;;
+;;; and I quote...
+;;;
+;;;     The set of special forms is purposely kept very small because
+;;;     any program analyzing program (read code walker) must have
+;;;     special knowledge about every type of special form. Such a
+;;;     program needs no special knowledge about macros...
+;;;
+;;; So all we have to do here is a define a way to store and retrieve
+;;; templates which describe how to walk the 24 special forms and we
+;;; are all set...
+;;;
+;;; Well, its a nice concept, and I have to admit to being naive
+;;; enough that I believed it for a while, but not everyone takes
+;;; having only 24 special forms as seriously as might be nice. There
+;;; are (at least) 3 ways to lose:
+;;
+;;;   1 - Implementation x implements a Common Lisp special form as
+;;;       a macro which expands into a special form which:
+;;;      - Is a common lisp special form (not likely)
+;;;      - Is not a common lisp special form (on the 3600 IF --> COND).
+;;;
+;;;     * We can save ourselves from this case (second subcase really)
+;;;       by checking to see whether there is a template defined for
+;;;       something before we check to see whether we can macroexpand it.
+;;;
+;;;   2 - Implementation x implements a Common Lisp macro as a special form.
+;;;
+;;;     * This is a screw, but not so bad, we save ourselves from it by
+;;;       defining extra templates for the macros which are *likely* to
+;;;       be implemented as special forms. [Note: As of sbcl-0.6.9, these
+;;;       extra templates have been deleted, since this is not a problem
+;;;       in SBCL and we no longer try to make this walker portable
+;;;       across other possibly-broken CL implementations.]
+;;;
+;;;   3 - Implementation x has a special form which is not on the list of
+;;;       Common Lisp special forms.
+;;;
+;;;     * This is a bad sort of a screw and happens more than I would
+;;;       like to think, especially in the implementations which provide
+;;;       more than just Common Lisp (3600, Xerox etc.).
+;;;       The fix is not terribly satisfactory, but will have to do for
+;;;       now. There is a hook in get walker-template which can get a
+;;;       template from the implementation's own walker. That template
+;;;       has to be converted, and so it may be that the right way to do
+;;;       this would actually be for that implementation to provide an
+;;;       interface to its walker which looks like the interface to this
+;;;       walker.
+
+
 
 ;;;; OPERATOR-{COMPONENT,INFO}
 
