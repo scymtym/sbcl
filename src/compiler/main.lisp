@@ -1110,29 +1110,6 @@ necessary, since type inference may take arbitrarily long to converge.")
              (*disabled-package-locks* (lexenv-disabled-package-locks *lexenv*)))
         (process-toplevel-progn forms path compile-time-too)))))
 
-;;; Parse an EVAL-WHEN situations list, returning three flags,
-;;; (VALUES COMPILE-TOPLEVEL LOAD-TOPLEVEL EXECUTE), indicating
-;;; the types of situations present in the list.
-(defun parse-eval-when-situations (situations)
-  (when (or (not (listp situations))
-            (set-difference situations
-                            '(:compile-toplevel
-                              compile
-                              :load-toplevel
-                              load
-                              :execute
-                              eval)))
-    (compiler-error "bad EVAL-WHEN situation list: ~S" situations))
-  (let ((deprecated-names (intersection situations '(compile load eval))))
-    (when deprecated-names
-      (style-warn "using deprecated EVAL-WHEN situation names~{ ~S~}"
-                  deprecated-names)))
-  (values (intersection '(:compile-toplevel compile)
-                        situations)
-          (intersection '(:load-toplevel load) situations)
-          (intersection '(:execute eval) situations)))
-
-
 ;;; utilities for extracting COMPONENTs of FUNCTIONALs
 (defun functional-components (f)
   (declare (type functional f))
@@ -1440,7 +1417,7 @@ necessary, since type inference may take arbitrarily long to converge.")
                        (compiler-error "~S form is too short: ~S"
                                        (car form)
                                        form))))
-              (case (car form)
+              (case (car form) ; TODO use special operator code or WALK-FORMS for this dispatch?
                 ((eval-when macrolet symbol-macrolet);things w/ 1 arg before body
                  (need-at-least-one-arg form)
                  (destructuring-bind (special-operator magic &rest body) form
@@ -1449,7 +1426,11 @@ necessary, since type inference may take arbitrarily long to converge.")
                       ;; CT, LT, and E here are as in Figure 3-7 of ANSI
                       ;; "3.2.3.1 Processing of Top Level Forms".
                       (multiple-value-bind (ct lt e)
-                          (parse-eval-when-situations magic)
+                          (funcall (special-operator-info-parser
+                                    (find-special-operator-info 'eval-when))
+                                   (lambda (&key situations &allow-other-keys)
+                                     (parse-eval-when-situations situations))
+                                   form)
                         (let ((new-compile-time-too (or ct
                                                         (and compile-time-too
                                                              e))))

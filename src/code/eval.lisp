@@ -190,32 +190,39 @@
                ((progn)
                 (simple-eval-progn-body (rest exp) lexenv))
                ((eval-when)
-                ;; FIXME: DESTRUCTURING-BIND returns ARG-COUNT-ERROR
-                ;; instead of PROGRAM-ERROR when there's something wrong
-                ;; with the syntax here (e.g. missing SITUATIONS). This
-                ;; could be fixed by hand-crafting clauses to catch and
-                ;; report each possibility, but it would probably be
-                ;; cleaner to write a new macro
-                ;; DESTRUCTURING-BIND-PROGRAM-SYNTAX which does
-                ;; DESTRUCTURING-BIND and promotes any mismatch to
-                ;; PROGRAM-ERROR, then to use it here and in (probably
-                ;; dozens of) other places where the same problem
-                ;; arises.
-                (destructuring-bind (eval-when situations &rest body) exp
-                  (declare (ignore eval-when))
-                  (multiple-value-bind (ct lt e)
-                      (sb!c:parse-eval-when-situations situations)
-                    ;; CLHS 3.8 - Special Operator EVAL-WHEN: The use of
-                    ;; the situation :EXECUTE (or EVAL) controls whether
-                    ;; evaluation occurs for other EVAL-WHEN forms; that
-                    ;; is, those that are not top level forms, or those
-                    ;; in code processed by EVAL or COMPILE. If the
-                    ;; :EXECUTE situation is specified in such a form,
-                    ;; then the body forms are processed as an implicit
-                    ;; PROGN; otherwise, the EVAL-WHEN form returns NIL.
-                    (declare (ignore ct lt))
-                    (when e
-                      (simple-eval-progn-body body lexenv)))))
+                ;; TODO the following FIXME should be resolved by
+                ;; using the special operator stuff:
+                ;;
+                ;;   FIXME: DESTRUCTURING-BIND returns ARG-COUNT-ERROR
+                ;;   instead of PROGRAM-ERROR when there's something wrong
+                ;;   with the syntax here (e.g. missing SITUATIONS). This
+                ;;   could be fixed by hand-crafting clauses to catch and
+                ;;   report each possibility, but it would probably be
+                ;;   cleaner to write a new macro
+                ;;   DESTRUCTURING-BIND-PROGRAM-SYNTAX which does
+                ;;   DESTRUCTURING-BIND and promotes any mismatch to
+                ;;   PROGRAM-ERROR, then to use it here and in (probably
+                ;;   dozens of) other places where the same problem
+                ;;   arises.
+                (multiple-value-bind (body ct lt e)
+                    (funcall (sb!c::special-operator-info-parser
+                              (sb!c::find-special-operator-info 'eval-when))
+                             (lambda (&key situations forms)
+                               (multiple-value-call #'values
+                                 forms (sb!c:parse-eval-when-situations
+                                        situations)))
+                             exp)
+                  (declare (ignore ct lt))
+                  ;; CLHS 3.8 - Special Operator EVAL-WHEN: The use of
+                  ;; the situation :EXECUTE (or EVAL) controls whether
+                  ;; evaluation occurs for other EVAL-WHEN forms; that
+                  ;; is, those that are not top level forms, or those
+                  ;; in code processed by EVAL or COMPILE. If the
+                  ;; :EXECUTE situation is specified in such a form,
+                  ;; then the body forms are processed as an implicit
+                  ;; PROGN; otherwise, the EVAL-WHEN form returns NIL.
+                  (when e
+                    (simple-eval-progn-body body lexenv))))
                ((locally)
                 (simple-eval-locally exp lexenv))
                ((macrolet)
