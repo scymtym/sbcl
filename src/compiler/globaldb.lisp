@@ -457,7 +457,8 @@
   :type-spec (or function null))
 
 ;;; a function which converts this special form into IR1
-(define-info-type (:function :ir1-convert) :type-spec (or function null)) ; TODO remove
+(define-info-type (:function :ir1-convert) :type-spec (or function null)) ; TODO rename to :ir1-converter?
+(define-info-type (:function :ir1-converter) :type-spec (or function null))
 
 ;;; a SPECIAL-OPERATOR-INFO instance describing the special operator
 (define-info-type (:function :special-operator-info)
