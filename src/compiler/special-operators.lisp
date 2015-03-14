@@ -639,6 +639,17 @@ Evaluate the FORMS in the specified SITUATIONS (any
 of :COMPILE-TOPLEVEL, :LOAD-TOPLEVEL, or :EXECUTE, or (deprecated)
 COMPILE, LOAD, or EVAL)."))
 
+;;; Parse an EVAL-WHEN situations list, returning three flags, (VALUES
+;;; COMPILE-TOPLEVEL LOAD-TOPLEVEL EXECUTE), indicating the types of
+;;; situations present in the list.
+(defun parse-eval-when-situations (situations)
+  (awhen (intersection situations '(compile load eval))
+    (style-warn "~@<Using deprecated ~S situation name~P ~{~S~^, ~}.~@:>"
+                'eval-when (length it) it))
+  (values (intersection '(:compile-toplevel compile) situations)
+          (intersection '(:load-toplevel load) situations)
+          (intersection '(:execute eval) situations)))
+
 (define-special-operator load-time-value (form &optional read-only-p)
   ((:form        1)
    (:read-only-p ? :evaluated nil :type boolean)) ; TODO include type-error in test, also TODO test
