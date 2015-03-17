@@ -20,6 +20,19 @@
 ;;;; 2. WALK-FORMS/RECONSTITUTE TODO
 ;;;;
 ;;;; 3. Environment Interaction TODO
+;;;;
+;;;; 4. WALK-FORMS can call "secondary" functions in addition to the
+;;;;    primary callback function (TODO better name again) for each
+;;;;    walked form. These functions, or "hooks", can process or
+;;;;    change the walked forms and control to which sub-forms they
+;;;;    should be recursively applied. Hooks can be composed freely
+;;;;    and "see through" macro expansion, if desired.
+;;;;
+;;;;    Hooks can be used to transparent add things like
+;;;;    instrumentation to a primary code walking process such as ir1
+;;;;    conversion.
+;;;;
+;;;;    TODO the function is ADD-HOOK-PROCESSING
 
 (cl:in-package "SB!C")
 
@@ -776,3 +789,256 @@ and COMPONENTS* respectively."
   #!+sb-doc
   "TODO"
   (push `(,name . (macro . ,expansion)) (lexenv-vars env)))
+
+;;;; Hooks TODO steal some sentences from file header?
+;;;;
+;;;; This code is partially based on the "composable codewalking" work
+;;;; by Paul Khuong.
+;;;;
+;;;; The goal is to allow invocation of hook functions for arbitrary
+;;;; forms during code walking. The main idea is to wrap forms for
+;;;; which hooks should be invoked in pseudo-special forms headed by a
+;;;; %WRAPPER special operator that mark the respective wrapped form
+;;;; as having an attached hook and store the actual hook:
+;;;;
+;;;;   (%WRAPPER #<FUNCTION TRACER> (LET ...))
+;;;;
+;;;; Hooks can mark sub-forms of the forms they are invoked with in
+;;;; the same manner.
+;;;;
+;;;; It should be possible to freely mix multiple hooks during a
+;;;; single code walking.
+;;;;
+;;;; TODO macro handling
+;;;;
+;;;;   (walk-forms ... (add-hook-processing FUNCTION) FORM-WITH-WRAPPERS ...)
+
+;;;; Pseudo-special operators
+
+(define-special-operator %wrapper (hook form)
+  ((:hook 1 :evaluated nil :type function)
+   (:form 1))
+  #!+sb-doc
+  (:documentation
+   "Pseudo-special operator - only used during certain code walking operations.
+
+    Indicates that the wrapped FORM should be processed and
+    potentially transformed by HOOK during code walking."))
+
+(define-special-operator %post-macro-wrapper (hook form)
+  ((:hook 1 :evaluated nil :type function)
+   (:form 1))
+  #!+sb-doc
+  (:documentation
+   "Pseudo-special operator - only used during certain code walking operations.
+
+    Indicates that the wrapped FORM should be first MACROEXPANDed and
+    then processed and potentially transformed by HOOK during code
+    walking."))
+
+;;;; Wrapper utilities
+
+(defun %wrap (wrapper-name hook form)
+  `(,wrapper-name ,(coerce hook 'function) ,form))
+
+(defun wrap (hook form)
+  (%wrap '%wrapper hook form))
+
+(defun wrap-walked-form (wrapper-name hook form kind name &rest components)
+  (declare (ignore name))
+  (when (and (typep kind 'variable-info)
+             (member (getf components :access) '(:write :bind)))
+    (return-from wrap-walked-form form))
+
+  (%wrap wrapper-name hook form))
+
+(defun make-wrap-walked-form (kind name hook)
+  (declare (ignore name))
+  (typecase kind
+    (macroid-info
+     (named-lambda wrap-with-hook/%post-macro-wrapper
+         (form kind name &rest components)
+       (aver (not (typep form '(cons (eql %post-macro-wrapper)))))
+       (apply #'wrap-walked-form '%post-macro-wrapper hook
+              form kind name components)))
+    (t
+     (named-lambda wrap-with-hook/%wrapper
+         (form kind name &rest components)
+       (aver (not (typep form '(cons (eql %post-macro-wrapper)))))
+       (apply #'wrap-walked-form '%wrapper hook
+              form kind name components)))))
+
+(defun strip-wrappers (instead form)
+  (let ((wrappers '()))
+    (labels ((do-form (instead recurse form kind name &rest components)
+               (declare (ignore recurse))
+               (cond
+                 ;; Collect and strip all kinds of wrappers.
+                 ((and (typep kind 'special-operator-info)
+                       (member name '(%wrapper %post-macro-wrapper)
+                               :test #'eq))
+                  (let ((hook (getf components :hook))
+                        (form (getf components :form)))
+                    (push (list name hook) wrappers)
+                    (funcall instead :function #'do-form :form form)))
+                 ;; Stop at the first non-wrapper form.
+                 (t
+                  form))))
+      (declare (dynamic-extent #'do-form))
+      (values (funcall instead :function #'do-form :form form) wrappers))))
+
+(declaim (ftype (sfunction (function) function) add-hook-processing))
+(defun add-hook-processing (function)
+  #!+sb-doc
+  "Wrap FUNCTION in a function that executes code walking hooks.
+
+The returned function can be used as an argument to WALK-FORMS. For a
+form, WALK-FORMS will call all hooks attached to the form and then
+call FUNCTION on the resulting form.
+
+TODO signatures
+
+TODO macros
+
+TODO composability
+
+Example:
+
+  (sb-c:walk-forms
+   'list
+   (sb-c:add-hook-processing
+    (lambda (instead recurse form kind name &rest components)
+      (apply #'sb-c:reconstitute form kind name
+             (append (funcall recurse) components))))
+   (sb-c:wrap
+    (lambda (wrap recurse form kind name &rest components)
+      (if (member kind '(:special-form :constant)) ; TODO update
+          `(progn ,(apply #'sb-c:reconstitute form kind name
+                          (append (funcall recurse
+                                   :function (lambda (i r sub-form &rest args)
+                                               (declare (ignore i r args))
+                                               (funcall wrap sub-form)))
+                                  components)))
+          form))
+    '(setq a 1))
+   nil nil nil) ; don't actually supply NIL here
+  ; WALK-FORMS encounters (%wrapper <hook> (setq a 1)
+  ;   hook transforms (setq a 1) => (progn (setq a (%wrapper <hook> 1)))
+  ; WALK-FORMS encounters (progn (setq a (%wrapper <hook> 1)))
+  ;   no (outermost) wrappers
+  ;   primary walk function recurses into PROGN, then into SETQ,
+  ;   reconstituting results without further modification
+  ; WALK-FORMS encounters (%wrapper <hook> 1)
+  ;   hook transforms 1 => (progn 1)
+  ; WALK-FORMS encounters (progn 1)
+  ;   no (outermost) wrappers
+  ;   primary walk functions recurses into PROGN, then \"into\" 1,
+  ;   reconstituting results without further modification
+  => (PROGN (SETQ A (PROGN 1)))
+
+In the example, the \"primary\" walk function given to WALK-FORMS just
+reconstitutes results recursive processing into the same \"shape\" as
+the original form without further modification. This function is
+wrapper by ADD-HOOK-PROCESSING as described above. A hook doing an
+actual transformation is attached to the outermost input form (it
+could be attached anywhere else as well). This hooks does two things:
+
+1. It wraps any form of kind :SPECIAL-OPERATOR or :CONSTANT in a
+   PROGN via `(progn ,(RECONSTITUTE ...)).
+
+2. (and this is the tricky/interesting part) It marks
+   sub-forms (i.e. the ... above) for further processing by the
+   hook. This is achieved by calling the RECURSE function to descend
+   into sub-forms and calling WRAP on the visited sub-forms."
+  (labels
+      ((re-wrap (wrappers form &optional name)
+         (reduce (lambda (form wrapper)
+                   (destructuring-bind (name* hook) wrapper
+                     (%wrap (or name name*) hook form)))
+                 wrappers :initial-value form))
+       ;; Apply WRAPPER to FORM and return the resulting form.
+       (apply-wrapper (instead form wrapper)
+         (destructuring-bind (name hook) wrapper
+           (aver (eq name '%wrapper))
+           (funcall
+            instead
+            :function (lambda (instead recurse form kind name &rest args)
+                        (declare (ignore instead))
+                        (let ((wrap (make-wrap-walked-form
+                                     kind name hook)))
+                          (apply hook wrap recurse form kind name args)))
+            :form     form)))
+       ;; Apply WRAPPERS to FORM in the correct order and return the
+       ;; resulting form. Take care to hide %POST-MACRO-WRAPPER forms
+       ;; inserted by inner hooks from outer hooks.
+       (apply-wrappers (instead wrappers form)
+         (collect ((re-wrappers))
+           (let ((result
+                  (reduce
+                   (lambda (form wrapper)
+                     (let ((result (apply-wrapper instead form wrapper)))
+                       (typecase result ; hide %POST-MACRO-WRAPPERs
+                         ((cons (eql %post-macro-wrapper))
+                          (re-wrappers (butlast result))
+                          (third result))
+                         (t
+                          result))))
+                   wrappers :initial-value form)))
+             (re-wrap (re-wrappers) result))))
+       ;; macroexpand FORM via FUNCTION. Slightly tricky because we
+       ;; want to ensure the macroexpansion is done through a call of
+       ;; FUNCTION.
+       (expand (instead form)
+         (labels ((capture (instead recurse form &rest args)
+                    (declare (ignore instead recurse args))
+                    form)
+                  (capturing-delegate (instead recurse form kind &rest args)
+                    (aver (typep kind 'macroid-info))
+                    (flet ((instead (&rest args &key (function function) &allow-other-keys) ; TODO experimental; add explanation if it works
+                             (apply instead :function function args))
+                           (recurse (&rest args)
+                             (apply recurse :function #'capture args)))
+                      (apply function #'instead #'recurse form kind args))))
+           (funcall instead :function #'capturing-delegate :form form)))
+       ;; Augmented function. Handles %WRAPPER and %POST-MACRO-WRAPPER
+       ;; and dispatches to FUNCTION for everything else.
+       (hook-processing (instead recurse form kind name &rest components)
+         (cond
+           ((and (typep kind 'special-operator-info)
+                 (eq name '%wrapper))
+            ;; Collect nested %WRAPPERs, apply their hooks to the
+            ;; wrapped form and continue with the resulting
+            ;; potentially transformed form.
+            (binding* (((form wrappers) (strip-wrappers instead form))
+                       (transformed (apply-wrappers instead wrappers form))) ; TODO unless (eq transformed form)?
+              (funcall instead :form transformed)))
+           ((and (typep kind 'special-operator-info)
+                 (eq name '%post-macro-wrapper))
+            ;; Collect nested %POST-MACRO-WRAPPERs, macroexpand FORM,
+            ;; re-wrap the expansion in suitable %WRAPPERs.
+            (binding* (((form wrappers) (strip-wrappers instead form))
+                       (expansion (expand instead form))
+                       (re-wrapped (re-wrap wrappers expansion '%wrapper)))
+              (funcall instead :form re-wrapped)))
+           (t
+            ;; Delegate to original FUNCTION.
+            (apply function instead recurse
+                   form kind name components)))))
+    #'hook-processing))
+
+(declaim (type function *reconstitute*))
+(defvar *reconstitute*)
+
+(defun add-hook-processing/reconstitute (function)
+  #!+sb-doc
+  "Like ADD-HOOK-PROCESSING but for use with WALK-FORMS/RECONSTITUTE."
+  (labels ((inject (instead recurse form kind name &rest components)
+             (apply function instead recurse *reconstitute*
+                    form kind name components)))
+    (let ((hooks+inject (add-hook-processing #'inject)))
+      (labels ((hook-processing (instead recurse reconstitute
+                                 form kind name &rest components)
+                 (let ((*reconstitute* reconstitute))
+                   (apply hooks+inject instead recurse
+                          form kind name components))))
+        #'hook-processing))))

@@ -432,7 +432,11 @@ of SBCL which maintained the CMU-CL-style split into two packages.)"
                "NOTE-LEXICAL-SYMBOL-MACRO"
 
                "EXPAND-MACRO"
-               "RECONSTITUTE"))
+               "RECONSTITUTE"
+
+               "WRAP"
+               "ADD-HOOK-PROCESSING"
+               "ADD-HOOK-PROCESSING/RECONSTITUTE"))
 
    #s(sb-cold:package-data
       :name "SB!DEBUG"
@@ -693,6 +697,8 @@ like *STACK-TOP-HINT* and unsupported stuff like *TRACED-FUN-LIST*."
                ;;"NOTE-LEXICAL-SYMBOL-MACRO"
                ;;"EXPAND-MACRO"
                ;;"RECONSTITUTE"
+               ;;"ADD-HOOK-PROCESSING"
+               ;;"ADD-HOOK-PROCESSING/RECONSTITUTE"
 
                ;; Stack allocation control
                "*STACK-ALLOCATE-DYNAMIC-EXTENT*"
