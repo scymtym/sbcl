@@ -1,0 +1,46 @@
+body {
+    font-family: monospace;
+    font-size: 8pt;
+
+    color: #eeeeec;
+    background-color: #2e3436;
+}
+
+.error {
+    color: red;
+}
+
+.paren {
+}
+
+.variable-info {
+    color: #fcaf3e;
+}
+
+.self-evaluating-info {
+    color: cyan; /* TODO */
+}
+
+.keyword {
+    color: #e090d7;
+}
+
+.string {
+    color: #e9b96e;
+}
+
+.number {
+    color: #e9b2e3
+}
+
+.special-operator-info > .head {
+    color: #b4fa70;
+}
+
+.named-application-info > .head {
+    color: #fce94f;
+}
+
+.macro-info > .head {
+    color: #c4a000;
+}
