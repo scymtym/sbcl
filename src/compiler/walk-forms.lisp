@@ -205,7 +205,20 @@ to the above parameters where ambiguity would otherwise arise)
         of the :EXPANDER component) and walks the expansion.
 
       SB-C:SETQ-WITH-SYMBOL-MACROS-INFO
-        TODO
+        FORM is a SETQ-assignment in which at least one of the
+        assigned-to variables is a symbol macro.
+
+        The following components are available:
+
+          :ARGUMENTS       ARGUMENTS
+          :NAMES           SYMBOLS
+          :VALUE-FORMS     FORMS
+          :SYMBOL-MACRO-PS GENERALIZED-BOOLEANS
+          :EXPANDER        FUNCTION
+
+        Calling RECURSE reconstitutes FORM by replacing SETQ with SETF
+        and expanding all symbol macros with their respective
+        expansions.
 
   NAME
     Depends on KIND. See description of KIND for possible meanings.
@@ -299,6 +312,35 @@ TODO explain"
                  (apply function
                         (make-instead function form) #'recurse/application-like
                         form info name components)))
+             (process-application-like/setq
+                 (function form info name &rest components)
+               (declare (type special-operator-info info))
+               (binding* (((names value-forms)
+                           (parse-setq-contents form (rest form) #'identity))
+                          (symbol-macro-ps ; are some variables symbol-macros?
+                           (mapcar (lambda (name)
+                                     (maybe-symbol-macro-info
+                                      classify-variable name))
+                                   names)))
+                 (if (every #'null symbol-macro-ps)
+                     (apply #'process-application-like
+                            function form info name components)
+                     (apply #'process-macro
+                            function form +setq-with-symbol-macros+
+                            (lambda (form*)
+                              (aver (eq form form*))
+                              (expand-setq+symbol-macro
+                               names value-forms symbol-macro-ps expand-macro))
+                            (list* :symbol-macro-ps symbol-macro-ps
+                                   components)))))
+             (process-application-like/maybe-setq
+                 (function form info name &rest components)
+               (declare (type (or special-operator-info application-info) info))
+               (apply (case (first form)
+                        (setq #'process-application-like/setq)
+                        (t    #'process-application-like))
+                      function form info name components))
+
              ;; TODO describe
              (process-macro (function form info expander &rest components)
                (declare (type macroid-info info))
@@ -357,12 +399,13 @@ TODO explain"
                  ;; Special operator => use the associated parser and
                  ;; info.
                  (:special-form info
-                  (funcall
-                   (special-operator-info-parser info)
-                   (lambda (&rest components) ; TODO avoid this lambda
-                     (apply #'process-application-like
-                            function form info components))
-                   form))
+                  (let ((name (special-operator-info-name info)))
+                    (funcall
+                     (special-operator-info-parser info)
+                     (lambda (&rest components)
+                       (apply #'process-application-like/maybe-setq
+                              function form info name components))
+                     form)))
 
                  ;; ((lambda ...) ...) => application with lambda-list
                  ;; and body as extra information.
@@ -555,6 +598,12 @@ and COMPONENTS* respectively."
     (multiple-value-call #'maybe-return
       (classify-variable-form/global form))))
 
+(defun maybe-symbol-macro-info (classify-variable name)
+  (multiple-value-bind (kind where type plist)
+      (funcall classify-variable name)
+    (when (eq kind :symbol-macro)
+      (list kind where type plist)))) ; TODO make-symbol-macro-info
+
 (defun note-lexical-variable (name env)
   #!+sb-doc
   "TODO"
@@ -636,8 +685,25 @@ and COMPONENTS* respectively."
     (compiler-macro-info
      (let ((*lexenv* env))
        (careful-expand-macro expander form t)))
-    (symbol-macro-info
+    ((or symbol-macro-info setq-with-symbol-macros-info)
      (funcall expander form))))
+
+(defun expand-setq+symbol-macro (names value-forms symbol-macro-ps
+                                 expand-macro)
+  (dx-flet ((expand-symbol (name value-form symbol-macro-p) ; TODO store SYMBOL-MACRO-INFOs in symbol-macro-p?
+              (destructuring-bind (&optional kind where type plist)
+                  symbol-macro-p
+                (declare (ignore where type))
+                (list (if kind
+                          (funcall expand-macro
+                                   +symbol-macro+
+                                   (lambda (form)
+                                     (declare (ignore form))
+                                     (getf plist :expansion))
+                                   name)
+                          name)
+                      value-form))))
+    `(setf ,@(mapcan #'expand-symbol names value-forms symbol-macro-ps))))
 
 (defun note-lexical-macro (name lambda-list declarations body
                            env compile-env instead)

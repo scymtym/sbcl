@@ -989,8 +989,20 @@ care."))
 
 ;;;; SETQ
 
+(defun parse-setq-contents (form names-and-value-forms
+                            &optional
+                            (check-variable-name #'check-variable-name))
+  (unless (evenp (length names-and-value-forms))
+    (compiler-error "~@<Odd number of arguments to ~S: ~S.~@:>"
+                    'setq form))
+  (collect ((names) (value-forms))
+    (loop :for (name value-form) :on names-and-value-forms :by #'cddr :do
+       (names (funcall check-variable-name name))
+       (value-forms value-form))
+    (values (names) (value-forms))))
+
 (define-special-operator setq (&whole form &rest names-and-value-forms)
-  ((:names       t :evaluated nil :type symbol)
+  ((:names       t :evaluated t :type symbol :access :write)
    (:value-forms t))
   #!+sb-doc
   (:documentation
@@ -999,17 +1011,12 @@ care."))
 Assign the value of each FORM to the variable name by the preceding
 VAR.")
   (:parser
-   (unless (evenp (length names-and-value-forms))
-     (compiler-error "~@<Odd number of arguments to ~S: ~S.~@:>"
-                     'setq form))
-   (collect ((names) (value-forms))
-     (loop :for (name value-form) :on names-and-value-forms :by #'cddr :do
-        (names (check-variable-name name))
-        (value-forms value-form))
-     (component :names       (names))
-     (component :value-forms (value-forms))))
+   (multiple-value-bind (names value-forms)
+       (parse-setq-contents form names-and-value-forms)
+     (component :names       names)
+     (component :value-forms value-forms)))
   (:unparser
-   (mapcan #'list (component :names) (component :value-forms))))
+   (nconc (mapcan #'list (component :names) (component :value-forms)))))
 
 ;;;; THROW, CATCH and UNWIND-PROTECT
 
@@ -1258,3 +1265,24 @@ VALUES-FORM."))
 
 (defglobal +symbol-macro+
     (make-symbol-macro-info +macro-expander+)) ; TODO where?
+
+;;;
+(defglobal +setq-with-symbol-macro-names+
+    (make-operator-component :expander t nil :type 'symbol))
+
+(defglobal +setq-with-symbol-macro-value-forms+
+    (make-operator-component :arguments t nil))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defstruct (setq-with-symbol-macros-info
+               (:include macroid-info)
+               (:constructor make-setq-with-symbol-macros-info
+                             (&rest components))
+               (:copier nil))))
+
+(defglobal +setq-with-symbol-macros+
+    (make-setq-with-symbol-macros-info
+     +macro-expander+
+     +setq-with-symbol-macro-names+
+     +setq-with-symbol-macro-value-forms+
+     +macro-arguments+))
