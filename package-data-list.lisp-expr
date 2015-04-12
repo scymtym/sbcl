@@ -406,6 +406,12 @@ of SBCL which maintained the CMU-CL-style split into two packages.)"
 
                ;; Code walking protocol
                ;; WARNING: experimental; subject to change
+               "INVALID-COMPONENT-ERROR"
+               "INVALID-COMPONENT-ERROR-INFO"
+               "INVALID-COMPONENT-ERROR-COMPONENT"
+               "INVALID-FORM-ERROR"
+               "INVALID-FORM-ERROR-FORM"
+
                "LEAF-INFO"
                "VARIABLE-INFO" "SELF-EVALUATING-INFO" "%LEAF-INFO"
                "SPECIAL-OPERATOR-INFO"
