@@ -25,15 +25,53 @@
 
 ;;;; WALK-FORMS function
 
+;;; Conditions
+
+(define-condition invalid-component-error (error)
+  ((info      :initarg :info
+              :type    operator-info
+              :reader  invalid-component-error-info)
+   (component :initarg :component
+              :type    keyword
+              :reader  invalid-component-error-component))
+  (:default-initargs
+   :info      (missing-arg)
+   :component (missing-arg))
+  (:report (lambda (condition stream)
+             (format stream "~@<Component ~S is invalid for a ~A ~
+                             form.~@:>"
+                     (invalid-component-error-component condition)
+                     (invalid-component-error-info condition))))
+  #!+sb-doc
+  (:documentation
+   "This error is signaled if an attempt is made to recurse into a
+non-existent component of a form in the contexts of WALK-FORMS."))
+
+(define-condition invalid-form-error (program-error)
+  ((form :initarg :form
+         :type    keyword
+         :reader  invalid-form-error-form))
+  (:default-initargs
+   :form (missing-arg))
+  (:report (lambda (condition stream)
+             (format stream "~@<Invalid form: ~S.~@:>"
+                     (invalid-form-error-form condition))))
+  #!+sb-doc
+  (:documentation
+   "This error is signaled if the compiler (or the WALK-FORMS
+function) encounters an invalid form."))
+
 ;;; Helper functions
 (defun %cannot-recurse (&key components function)
-  (declare (ignore components function))
-  (error "~@<Cannot recurse into TODO~@:>"))
+  (declare (ignore function))
+  (compiler-error 'invalid-component-error
+                  :info      :TODO
+                  :component (first components)))
 
 (defun %nop-recurse (&key components function)
   (declare (ignore function))
   (when components
-    (%cannot-recurse)))
+    (%cannot-recurse :components components)))
 
 (defmacro form-case (form &body clauses)
   (with-unique-names (form-var)
@@ -44,7 +82,7 @@
                (process-clause (clause)
                  (destructuring-bind (kind &rest body) clause
                    (when (member kind seen)
-                     (error "~@<Multiple ~S clauses~@:>" kind))
+                     (compiler-error "~@<Multiple ~S clauses~@:>" kind))
                    (push kind seen)
                    (flet ((make-body (body)
                             `((return-from nil (progn ,@body)))))
@@ -279,14 +317,16 @@ TODO explain"
   (let ((function (coerce function 'function)))
     (labels ((make-instead (function form) ; TODO check what can be dxified
                (named-lambda instead (&key (function function) (form form))
-                 (rec function form)))
+                 (rec/restart function form)))
              ;; Process an application or a special form. TODO explain more
              (process-application-like (function form info name &rest components)
                (declare (type (or special-operator-info application-info) info))
                (labels ((find-info (name)
                           (or (find name (operator-info-components info)
                                     :key #'operator-component-name)
-                              (error "~@<Unknown component: ~S~@:>" name)))
+                              (error 'invalid-component-error
+                                     :info      info
+                                     :component name)))
                         (recurse/component (function form info)
                           (declare (type operator-component info))
                           (aver (operator-component-evaluated info))
@@ -296,10 +336,10 @@ TODO explain"
                                      (operator-access-component-access info))))
                             (ecase (operator-component-cardinality info)
                               ((? 1)
-                               (rec function form))
+                               (rec/restart function form))
                               ((t)
                                (dx-flet ((one-form (form)
-                                           (rec function form)))
+                                           (rec/restart function form)))
                                  (map result-type #'one-form form))))))
                         (recurse/application-like (&key
                                                    (components components)
@@ -351,7 +391,7 @@ TODO explain"
                  (labels ((recurse/macro (&key (function function))
                             (let ((expansion (funcall expand-macro
                                                       info expander form)))
-                              (rec function expansion))))
+                              (rec/restart function expansion))))
                    (apply function
                           (make-instead function form)
                           #'recurse/macro
@@ -448,8 +488,18 @@ TODO explain"
 
                  ;;
                  (t
-                  (error "illegal function call"))))) ; TODO proper error
-      (rec function form))))
+                  (compiler-error 'invalid-form-error :form form))))
+             (rec/restart (function form)
+               (restart-case
+                   (rec function form)
+                 (use-value (value &optional condition)
+                   :report (lambda (stream)
+                             (format stream "~@<Process a different ~
+                                             form instead of ~S.~@:>"
+                                     form))
+                   (declare (ignore condition))
+                   (rec/restart function value)))))
+      (rec/restart function form))))
 
 ;;;; Reconstituting variant
 
