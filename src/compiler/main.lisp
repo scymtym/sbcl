@@ -344,15 +344,15 @@ Examples:
                     "~&  Undefined ~(~A~)~p:~
                      ~%    ~{~<~% ~1:;~S~>~^ ~}"
                     kind (length names) names)))
-        (format *error-output* "~[~:;~:*~&  caught ~W fatal ERROR condition~:P~]~
-                                ~[~:;~:*~&  caught ~W ERROR condition~:P~]~
-                                ~[~:;~:*~&  caught ~W WARNING condition~:P~]~
-                                ~[~:;~:*~&  caught ~W STYLE-WARNING condition~:P~]~
+        (format *error-output* "~[~2*~:;~:*~&  caught ~W ~C[0;31mfatal ERROR~C[0;70m condition~2:*~:P~2*~]~
+                                ~[~2*~:;~:*~&  caught ~W ~C[0;31mERROR~C[0;70m condition~2:*~:P~2*~]~
+                                ~[~2*~:;~:*~&  caught ~W ~C[0;31mWARNING~C[0;70m condition~2:*~:P~2*~]~
+                                ~[~2*~:;~:*~&  caught ~W ~C[0;32mSTYLE-WARNING~C[0;70m condition~2:*~:P~2*~]~
                                 ~[~:;~:*~&  printed ~W note~:P~]"
-                *aborted-compilation-unit-count*
-                *compiler-error-count*
-                *compiler-warning-count*
-                *compiler-style-warning-count*
+                *aborted-compilation-unit-count* (code-char 27) (code-char 27)
+                *compiler-error-count* (code-char 27) (code-char 27)
+                *compiler-warning-count* (code-char 27) (code-char 27)
+                *compiler-style-warning-count* (code-char 27) (code-char 27)
                 *compiler-note-count*))
       (terpri *error-output*)
       (force-output *error-output*))))

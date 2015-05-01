@@ -373,7 +373,12 @@
                 ((or error compiler-error) 'error))))
     (print-compiler-message
      *error-output*
-     (format nil "caught ~S:~%~~@<  ~~@;~~A~~:>" what)
+     (format nil "caught ~A~S~A:~%~~@<  ~~@;~~A~~:>"
+             (case what
+               (style-warning   (format nil "~C[0;32m" (code-char 27)))
+               ((warning error) (format nil "~C[0;31m" (code-char 27))))
+             what
+             (format nil "~C[0;70m" (code-char 27)))
      (list (princ-to-string condition)))))
 
 ;;; The act of signalling one of these beasts must not cause WARNINGSP
