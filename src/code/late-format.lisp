@@ -25,15 +25,25 @@
   (:default-initargs :references nil))
 
 (defun %print-format-error (condition stream)
-  (format stream
-          "~:[~*~;error in ~S: ~]~?~@[~%  ~A~%  ~V@T^~@[~V@T^~]~]"
-          (format-error-print-banner condition)
-          'format
-          (format-error-complaint condition)
-          (format-error-args condition)
-          (format-error-control-string condition)
-          (format-error-offset condition)
-          (format-error-second-relative condition)))
+  (let* ((control-string (format-error-control-string condition))
+         (offset-1       (format-error-offset condition))
+         (offset-2       (format-error-second-relative condition))
+         (previous-newline          (or (position #\Newline control-string
+                                       :end offset-1 :from-end t)
+                             0))
+         (start          (or (position #\Newline control-string
+                                       :end previous-newline :from-end t)
+                             0))
+         (substring      (subseq control-string start))
+         (offset-1       (- offset-1 previous-newline))
+         (offset-2       (when offset-2 (- offset-2 previous-newline))))
+    (format stream
+            "~:[~*~;error in ~S: ~]~
+             ~?~@[~%  ~A~%  ~V@T^~@[~V@T^~]~]"
+            (format-error-print-banner condition) 'format ; banner
+            (format-error-complaint condition)
+            (format-error-args condition)
+            substring offset-1 offset-2)))
 
 (def!struct format-directive
   (string (missing-arg) :type simple-string)
