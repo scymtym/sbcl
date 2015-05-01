@@ -637,7 +637,7 @@ and COMPONENTS* respectively."
       )
     (ecase kind
       (:special
-       (values :variable :global type))
+       (values :variable :global type)) ; TODO put type into plist?
       (:constant
        (values :variable :global type '(:constant t)))
       (:macro
