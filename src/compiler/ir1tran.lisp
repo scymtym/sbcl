@@ -399,8 +399,8 @@
 (defun link-node-to-previous-ctran (node ctran)
   (declare (type node node) (type ctran ctran))
   (aver (not (ctran-next ctran)))
-  (setf (ctran-next ctran) node)
-  (setf (node-prev node) ctran))
+  (setf (ctran-next ctran) node
+        (node-prev node) ctran))
 
 ;;; This function is used to set the ctran for a node, and thus
 ;;; determine what is evaluated next. If the ctran has no block, then
@@ -411,10 +411,10 @@
   (declare (type node node) (type ctran ctran))
   (if (eq (ctran-kind ctran) :unused)
       (let ((node-block (ctran-block (node-prev node))))
-        (setf (ctran-block ctran) node-block)
-        (setf (ctran-kind ctran) :inside-block)
-        (setf (ctran-use ctran) node)
-        (setf (node-next node) ctran))
+        (setf (ctran-block ctran) node-block
+              (ctran-kind ctran) :inside-block
+              (ctran-use ctran) node
+              (node-next node) ctran))
       (%use-ctran node ctran)))
 (defun %use-ctran (node ctran)
   (declare (type node node) (type ctran ctran) (inline member))
