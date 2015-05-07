@@ -127,21 +127,27 @@
   is the value that is supposed to go into that place. Returns the last
   value. The place argument may be any of the access forms for which SETF
   knows a corresponding setting form."
-    (unless args
-      (return-from setf nil))
-    (destructuring-bind (place value-form . more) args
-      (when more
-        (return-from setf `(progn ,@(sb!c::explode-setq form 'error))))
-      (when (symbolp (setq place (macroexpand-for-setf place env)))
-        (return-from setf `(setq ,place ,value-form)))
-      (let* ((fun (car place))
-             (inverse (info :setf :inverse fun)))
-        (when (and inverse (not (sb!c::fun-locally-defined-p fun env)))
-          (return-from setf `(,inverse ,@(cdr place) ,value-form))))
-      (multiple-value-bind (temps vals newval setter)
-          (sb!xc:get-setf-expansion place env)
-        (car (gen-let* (mapcar #'list temps vals)
-                       (gen-mv-bind newval value-form (forms-list setter)))))))
+  (destructuring-bind (&optional place value-form . more) args
+    (cond
+      ((not args)
+       (return-from setf nil))
+      ((oddp (length args))
+       (error "~@<Odd number of arguments to ~S: no value-form for ~
+               place ~S.~@:>"
+              'setf (car (last args))))
+      (more
+       (return-from setf (sb!c::explode-setq/new 'setf (rest form))))
+      ((symbolp (setq place (macroexpand-for-setf place env)))
+       (return-from setf `(setq ,place ,value-form)))
+      ((let* ((fun (car place))
+              (inverse (info :setf :inverse fun)))
+         (when (and inverse (not (sb!c::fun-locally-defined-p fun env)))
+           (return-from setf `(,inverse ,@(cdr place) ,value-form)))))
+      (t
+       (multiple-value-bind (temps vals newval setter)
+           (sb!xc:get-setf-expansion place env)
+         (car (gen-let* (mapcar #'list temps vals)
+                        (gen-mv-bind newval value-form (forms-list setter)))))))))
 
   ;; various SETF-related macros
 

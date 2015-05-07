@@ -675,6 +675,11 @@ destructuring lambda list, and the FORMS evaluate to the expansion."
 
 ;;;; SETQ
 
+(defun explode-setq/new (operator names-and-value-forms)
+  `(progn
+     ,@(loop :for (name value-form) :on names-and-value-forms :by #'cddr
+          :collect `(,operator ,name ,value-form))))
+
 (define-ir1-translator setq ((names value-forms)
                              instead recurse start next result)
   (if (= (length names) 1)
@@ -701,15 +706,16 @@ destructuring lambda list, and the FORMS evaluate to the expansion."
                (setq-var/new instead recurse start next result leaf value-form)))
           (cons
            (aver (eq (car leaf) 'macro))
-           ;; FIXME: [Free] type declaration. -- APD, 2002-01-26
+           ;; Allow *MACROEXPAND-HOOK* to see NAME get expanded, not
+           ;; just see a use of SETF on the new place.
            (instead start next result
-                    :form `(setf ,(cdr leaf) ,value-form)))
+                    :form `(setf ,name ,value-form)))
           (heap-alien-info
            (instead start next result
                     :form `(%set-heap-alien ',leaf ,value-form)))))
       ;; Convert to a sequence of single-assignment SETQs.
       (instead start next result
-               :form `(progn ,@(mapcar #'list '#1=(setq . #1#) names value-forms)))))
+               :form (explode-setq/new 'setq (mapcan #'list names value-forms)))))
 
 ;;; This is kind of like REFERENCE-LEAF, but we generate a SET node.
 ;;; This should only need to be called in SETQ.
