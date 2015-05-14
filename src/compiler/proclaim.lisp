@@ -281,6 +281,11 @@
                          location)
                    (remf (info :source-location :declaration name) key)))
              (map-names (names function &rest extra-args)
+               ;; currently breaks cold-init
+               #+TODO-maybe-later (unless names
+                 (compiler-style-warn
+                  "~@<~S declaration does not declare anything: ~S~@:>"
+                  kind raw-form))
                (mapc (lambda (name)
                        (store-location name)
                        (apply function name extra-args))
