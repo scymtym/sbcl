@@ -1589,6 +1589,8 @@
     (values
      (case (first spec)
        (type
+        (unless (cdr spec)
+          (compiler-style-warn "no type specified in TYPE declaration: ~S" spec))
         (process-type-decl (cdr spec) res vars context))
        ((ignore ignorable)
         (process-ignore-decl spec vars fvars res)
@@ -1645,6 +1647,7 @@
 ;;;
 ;;; This is also called in main.lisp when PROCESS-FORM handles a use
 ;;; of LOCALLY.
+;; TODO share code with %proclaim
 (defun process-decls (decls vars fvars &key
                       (lexenv *lexenv*) (binding-form-p nil) (context :compile)
                       (allow-lambda-list nil))
