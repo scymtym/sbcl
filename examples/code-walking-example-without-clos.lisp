@@ -121,7 +121,8 @@
 ;;;
 ;; See comments in TRACER function.
 (defun trickster (wrap recurse form kind name &rest components)
-  (log:info form kind name components)
+  (let ((sb-c::*walk-mode* :old))
+    (log:info form kind name components))
   (typecase kind
     (sb-c:leaf-info
      form)
