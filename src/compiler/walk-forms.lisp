@@ -340,14 +340,14 @@ TODO explain"
                               (error 'invalid-component-error
                                      :info      info
                                      :component name)))
-                        (recurse/component (function form info)
-                          (declare (type operator-component info))
-                          (aver (operator-component-evaluated info))
+                        (recurse/component (function form component)
+                          (declare (type operator-component component))
+                          (aver (operator-component-evaluated component))
                           (let ((*variable-access*
-                                 (if (not (typep info 'operator-access-component))
+                                 (if (not (typep component 'operator-access-component))
                                      *variable-access*
-                                     (operator-access-component-access info))))
-                            (ecase (operator-component-cardinality info)
+                                     (operator-access-component-access component))))
+                            (ecase (operator-component-cardinality component)
                               ((? 1)
                                (rec/restart function form))
                               ((t)
@@ -454,7 +454,7 @@ TODO explain"
                  (:special-form info
                   (let ((name (special-operator-info-name info)))
                     (funcall
-                     (special-operator-info-parser info)
+                     (special-operator-info-parser info) ; TODO add hyperspec reference if parse fails
                      (lambda (&rest components)
                        (apply #'process-application-like/maybe-setq
                               function form info name components))
@@ -463,7 +463,14 @@ TODO explain"
                  ;; ((lambda ...) ...) => application with lambda-list
                  ;; and body as extra information.
                  (:lambda-application
-                  (destructuring-bind ((lambda lambda-list &rest body)
+                  (funcall (special-operator-info-parser (find-special-operator-info 'function)) ; TODO load-time-value or whatever
+                           (lambda (&rest args)
+                             (apply #'process-application-like
+                                    function form +lambda-application+ 'lambda
+                                    :arguments (rest form)
+                                    args))
+                           `(function ,(first form)))
+                  #+no (destructuring-bind ((lambda lambda-list &rest body)
                                        &rest arguments)
                       form
                     (declare (ignore lambda))
@@ -636,7 +643,7 @@ and COMPONENTS* respectively."
     #+TODO (when (and (eq kind :unknown) (not (check-deprecated-variable form)))
       )
     (ecase kind
-      (:special
+      ((:global :special)
        (values :variable :global type)) ; TODO put type into plist?
       (:constant
        (values :variable :global type '(:constant t)))
@@ -680,7 +687,7 @@ and COMPONENTS* respectively."
                          name
                          (let ((*lexenv* env))
                            (lexenv-find name funs)))))
-    (typecase definition
+    (typecase definition ; TODO etypecase
       (global-var ; TODO global-var indicates :global function?
        (values :application :lexical (list :definition definition)))
       (functional
@@ -695,7 +702,7 @@ and COMPONENTS* respectively."
          (kind (info :function :kind name)))
     (ecase kind
       (:function
-       (values :application :global)) ; TODO
+       (values :application :global (list :definition (find-free-fun name "shouldn't happen! (no-cmacro)")))) ; TODO
       (:macro
        (let ((expander (info :function :macro-function name)))
          (values kind :global (list :expander expander))))

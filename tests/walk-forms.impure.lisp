@@ -14,7 +14,7 @@
 (cl:in-package #:cl-user)
 
 (load "assertoid.lisp")
-(use-package "ASSERTOID")
+(use-package '#:assertoid)
 
 ;;;; Utilities
 
@@ -101,6 +101,43 @@
   (loop :for (key value) :on plist :by #'cddr
      :collect (cons key value)))
 
+(defun check-component-list (form alist expected-alist check-value)
+  (let ((diff1 (set-difference alist expected-alist
+                               :key #'car :test #'equal))
+        (diff2 (set-difference expected-alist alist
+                               :key #'car :test #'equal)))
+    (when diff1
+      (error "~@<In ~S: unexpected properties ~{~S~^, ~}~@:>"
+             form diff1))
+    (when diff2
+      (error "~@<In ~S: missing properties ~{~S~^, ~}~@:>"
+             form diff2))
+    (loop :for (key . value) :in alist :do
+       (funcall check-value key value))))
+
+(defun check-component-list-vs-expected (form alist expected-alist)
+  (check-component-list
+   form alist expected-alist
+   (lambda (key value)
+     (let ((expected-value (cdr (assoc key expected-alist))))
+       (case expected-value
+         (:ignore)
+         (t
+          (unless (equal value expected-value)
+            (error "~@<In ~S: unexpected value of ~S property; actual: ~
+                    ~S, expected: ~S~@:>"
+                   form key value expected-value))))))))
+
+(defun check-component-list-vs-info (form alist info)
+  (let ((components (loop :for component :in (sb-c::operator-info-components info)
+                       :collect (cons (sb-c::operator-component-name component)
+                                      component))))
+    (check-component-list
+     form alist components
+     (lambda (key value)
+       (let ((component (cdr (assoc key components))))
+         (assert (typep value (sb-c::operator-component-type component)))))))) ; TODO error message
+
 (defun %check-walk-cases (environment &rest cases)
   (labels ((check-form (info expected)
              (destructuring-bind ((form kind name &optional plist)
@@ -112,30 +149,11 @@
                    expected
                  ;; Compare KIND, NAME and PLIST.
                  (assert (typep kind expected-kind))
-                 (assert (eq name expected-name))
-                 (let* ((alist (plist-alist plist))
-                        (expected-alist (plist-alist expected-plist))
-                        (diff1 (set-difference alist expected-alist
-                                               :key #'car :test #'equal))
-                        (diff2 (set-difference expected-alist alist
-                                               :key #'car :test #'equal)))
-                   (when diff1
-                     (error "~@<In ~S: unexpected properties ~{~S~^, ~}~@:>"
-                            form diff1))
-                   (when diff2
-                     (error "~@<In ~S: missing properties ~{~S~^, ~}~@:>"
-                            form diff2))
-                   (loop :for (key . value) :in alist :do
-                      (let ((expected-value (cdr (assoc key expected-alist))))
-                        (case expected-value
-                          (:ignore)
-                          (t
-                           (unless (equal value expected-value)
-                             (error "~@<In ~S: unexpected value of ~S ~
-                                     property; actual: ~S, expected: ~
-                                     ~S~@:>"
-
-                                    form key value expected-value)))))))
+                 (assert (equal name expected-name)) ; name can be number, string, etc => EQUAL
+                 (let ((alist (plist-alist plist))
+                       (expected-alist (plist-alist expected-plist)))
+                   (check-component-list-vs-expected form alist expected-alist)
+                   #+TODO (check-component-list-vs-info form alist kind))
                  ;; Recurse into subforms.
                  ;; TODO same diff algorithm as for properties?
                  (cond
@@ -145,15 +163,18 @@
                    (t
                     (loop :for (key subform) :on subforms :by #'cddr :do
                        (let ((expected-subform
-                              (getf expected-subforms key :missing)))
+                              (getf expected-subforms key :missing))
+                             (component
+                              (find key (sb-c::operator-info-components kind)
+                                    :key #'sb-c::operator-component-name)))
                          (case expected-subform
                            (:missing
                             (error "~@<In ~S: unexpected subform ~S ~S.~@:>"
                                    form key subform))
                            (t
-                            (if (keywordp (second (first subform))) ; hack
-                                (check-form subform expected-subform)
-                                (mapc #'check-form subform expected-subform)))))
+                            (case (sb-c::operator-component-cardinality component)
+                              (1 (check-form subform expected-subform))
+                              (* (mapc #'check-form subform expected-subform))))))
                        (remf expected-subforms key))))
                  (when expected-subforms
                    (error "~@<In ~S: missing subforms ~{~S ~S~^, ~}~@:>"
@@ -169,7 +190,7 @@
               ;; Check walked forms.
               (let ((info (recording-walk-with-lexenv-lookup
                            form :environment environment)))
-                (assert (typep info '(cons )))
+                (assert (typep info '(cons ))) ; TODO
                 (check-form info expected))))
           cases)))
 
@@ -225,7 +246,9 @@
 (with-test (:name (sb-c:walk-forms sb-c:self-evaluating-info))
   ;; TODO
   (check-walk-cases
-   '(1 ((sb-c:self-evaluating-info 1 ())))))
+   '(1    ((sb-c:self-evaluating-info 1 ())))
+   '("1"  ((sb-c:self-evaluating-info "1" ())))
+   '(:foo ((sb-c:self-evaluating-info :foo ())))))
 
 
 ;;;; Kind SPECIAL-OPERATOR-INFO
@@ -271,57 +294,126 @@
 (with-test (:name (sb-c:walk-forms sb-c:special-operator-info block))
   ;; TODO
   (check-walk-cases
-   '((block nil))
-   '((block foo))
-   '((block foo a b))))
+   '((block nil)
+     ((sb-c:special-operator-info block (:name nil))))
+   '((block foo)
+     ((sb-c:special-operator-info block (:name foo))))
+   '((block foo 1)
+     ((sb-c:special-operator-info block (:name foo :forms (1)))
+      :forms
+      (((sb-c:self-evaluating-info 1 ())))))
+   '((block foo 1 2)
+     ((sb-c:special-operator-info block (:name foo :forms (1 2)))
+      :forms
+      (((sb-c:self-evaluating-info 1 ()))
+       ((sb-c:self-evaluating-info 2 ())))))))
 
 (with-test (:name (sb-c:walk-forms sb-c:special-operator-info return-from))
   ;; TODO
   (check-walk-cases
-   '((return-from nil))
-   '((return-from foo))
-   '((return-from foo bla))))
+   '((return-from nil)
+     ((sb-c:special-operator-info return-from (:name nil))))
+   '((return-from foo)
+     ((sb-c:special-operator-info return-from (:name foo))))
+   '((return-from foo 1)
+     ((sb-c:special-operator-info return-from (:name foo :value 1))
+      :value
+      ((sb-c:self-evaluating-info 1 ()))))))
 
 (with-test (:name (sb-c:walk-forms sb-c:special-operator-info tagbody))
   ;; TODO
   (check-walk-cases
-   '((tagbody))
-   '((tagbody nil))
-   '((tagbody nil :foo))
-   '((tagbody nil :foo :bar))
-   '((tagbody nil (1+ a)))
-   '((tagbody nil :foo (1+ a)))
-   '((tagbody nil (1+ a) :foo))
-   '((tagbody (1+ a)))
-   '((tagbody (1+ a) (1+ b)))
-   '((tagbody (1+ a) (1+ b) (1+ c)))
-   '((tagbody :foo (1+ a) (1+ b)))
-   '((tagbody (1+ a) :foo (1+ b)))
-   '((tagbody (1+ a) (1+ b) :foo))))
+   '((tagbody)
+     ((sb-c:special-operator-info tagbody (:tags () :segments ((progn))))
+      :segments
+      ()))
+   '((tagbody nil)
+     ((sb-c:special-operator-info tagbody (:tags     (nil)
+                                           :segments ((progn) (progn))))
+      :segments
+      ()))
+   '((tagbody nil :foo)
+     ((sb-c:special-operator-info tagbody (:tags     (nil :foo)
+                                           :segments ((progn) (progn) (progn))))
+      :segments
+      ()))
+   '((tagbody nil :foo :bar)
+     ((sb-c:special-operator-info tagbody (:tags     (nil :foo :bar)
+                                           :segments ((progn) (progn) (progn) (progn))))
+      :segments
+      ()))
+   '((tagbody nil '1)
+     ((sb-c:special-operator-info tagbody (:tags     (nil)
+                                           :segments ((progn) (progn '1))))
+      :segments
+      ()))
+   '((tagbody nil :foo '1)
+     ((sb-c:special-operator-info tagbody (:tags     (nil :foo)
+                                           :segments ((progn) (progn) (progn '1))))
+      :segments
+      ()))
+   '((tagbody nil '1 :foo)
+     ((sb-c:special-operator-info tagbody (:tags ()
+                                           :segments ((progn) (progn '1) (progn))))
+      :segments
+      ()))
+   '((tagbody '1)
+     ((sb-c:special-operator-info tagbody (:tags () :segments ((progn))))
+      :segments
+      ()))
+   '((tagbody '1 '2)
+     ((sb-c:special-operator-info tagbody (:tags () :segments ((progn))))
+      :segments
+      ()))
+   '((tagbody '1 '2 '3)
+     ((sb-c:special-operator-info tagbody (:tags () :segments ((progn))))
+      :segments
+      ()))
+   '((tagbody :foo '1 '2)
+     ((sb-c:special-operator-info tagbody (:tags () :segments ((progn))))
+      :segments
+      ()))
+   '((tagbody '1 :foo '2)
+     ((sb-c:special-operator-info tagbody (:tags () :segments ((progn))))
+      :segments
+      ()))
+   '((tagbody '1 '2 :foo)
+     ((sb-c:special-operator-info tagbody (:tags () :segments ((progn))))
+      :segments
+      ()))))
 
 ;;;; Compiler-magic special forms
 ;;;; TODO test internal ones as well
 
-(with-test (:name (sb-c:walk-forms :special-form eval-when))
+(with-test (:name (sb-c:walk-forms sb-c:special-operator-info eval-when))
   ;; TODO
   )
 
-(with-test (:name (sb-c:walk-forms :special-form quote))
+(with-test (:name (sb-c:walk-forms sb-c:special-operator-info quote))
+  ;; TODO
+  (check-walk-cases
+   '((quote 1)
+     ((sb-c:special-operator-info quote (:thing 1))))
+   '((quote x)
+     ((sb-c:special-operator-info quote (:thing x))))
+   '((quote quote)
+     ((sb-c:special-operator-info quote (:thing quote))))))
 
-  (check-roundtrip-cases 'quote
-                         '(quote 1)
-                         '(quote x)
-                         '(quote quote)))
-
-(with-test (:name (sb-c:walk-forms :special-form function))
-
-  (check-roundtrip-cases 'function
-                         '(function foo)
-                         '(function (setf foo))
-                         '(function (lambda ()))
-                         '(function (lambda (x)))
-                         '(function (lambda (x) x))
-                         '(function (lambda (x) x y))))
+(with-test (:name (sb-c:walk-forms sb-c:special-operator-info function))
+  ;; TODO
+  (check-walk-cases
+   '((function foo)
+     ((sb-c:special-operator-info function (:name foo))))
+   '((function (setf foo))
+     ((sb-c:special-operator-info function (:name (setf foo)))))
+   '((function (lambda ()))
+     ((sb-c:special-operator-info function ())))
+   '((function (lambda (x)))
+     ((sb-c:special-operator-info function ())))
+   '((function (lambda (x) x))
+     ((sb-c:special-operator-info function ())))
+   '((function (lambda (x) x y))
+     ((sb-c:special-operator-info function ())))))
 
 (with-test (:name (sb-c:walk-forms :special-form sb-c::global-function)) ; TODO correct package?
   ;; TODO
@@ -329,8 +421,8 @@
 
 ;;;; SYMBOL-MACROLET, LET[*] and LOCALLY
 
-(with-test (:name (sb-c:walk-forms :special-form symbol-macrolet))
-  (check-walk-cases
+(with-test (:name (sb-c:walk-forms sb-c:special-operator-info symbol-macrolet))
+  (check-walk-cases ; TODO use /environment variant?
    '((symbol-macrolet ())
      ((sb-c:special-operator-info symbol-macrolet
        (:names ()
@@ -340,12 +432,20 @@
       :names () :expansions () :body nil))
    '((symbol-macrolet ((a 1) (c 1)) (declare (type boolean a)) a)
      ((sb-c:special-operator-info symbol-macrolet
-       (:names (a c)
-        :expansions (1 1)
+       (:names        (a c)
+        :expansions   (1 1)
         :declarations ((declare (type boolean a)))
-        :body (a)))))))
+        :body         (a)))
+      :names
+      (((sb-c:symbol-macro-info a (:expander :ignore :where :lexical)) ; TODO unfinished
+        ))
+      :expansions
+      (((sb-c:self-evaluating-info 1 ())
+        (sb-c:self-evaluating-info 1 ())))
+      :body
+      (((sb-c:variable-info a ())))))))
 
-(with-test (:name (sb-c:walk-forms :special-form let))
+(with-test (:name (sb-c:walk-forms sb-c:special-operator-info let))
   (check-walk-cases
    '((let ())
      ((sb-c:special-operator-info let
@@ -357,11 +457,11 @@
       :names () :values () :body nil))
    '((let ((a 1) b (c 1)) (declare (type boolean a)) a)
      ((sb-c:special-operator-info let
-       (:names (a b c)
-        :values (1 nil 1)
-        :suppliedps (t nil t)
+       (:names        (a b   c)
+        :values       (1 nil 1)
+        :suppliedps   (t nil t)
         :declarations ((declare (type boolean a)))
-        :body (a)))
+        :body         (a)))
       :names
       (((sb-c:variable-info a (:access :bind :where nil)))
        ((sb-c:variable-info b (:access :bind :where nil)))
@@ -377,28 +477,51 @@
       :body
       (((sb-c:variable-info a
          (:access :read
-          :where  :lexical))))))))
+          :where  :lexical))))))
+   #+TODO '((let ((a 1) (b a))))))
 
-(with-test (:name (sb-c:walk-forms :special-form let*))
-  (check-walk-cases 'let*
-   '((let* ()))
-   '((let* ((a 1) b (c 1)) (declare (type boolean a)) a))))
+(with-test (:name (sb-c:walk-forms sb-c:special-operator-info let*))
+  (check-walk-cases
+   '((let* ())
+     ((sb-c:special-operator-info let*
+       (:names        ()
+        :values       ()
+        :suppliedps   ()
+        :declarations ()
+        :body         nil))))
+   '((let* ((a 1) b (c 1)) (declare (type boolean a)) a)
+     ((sb-c:special-operator-info let*
+       (:names        (a b   c)
+        :values       (1 nil 1)
+        :suppliedps   (t nil t)
+        :declarations ((declare (type boolean a)))
+        :body         (a)))))
+   #+TODO '((let* ((a 1) (b a))))))
 
-(with-test (:name (sb-c:walk-forms :special-form locally))
-  (check-walk-cases 'locally
-   '(locally)
-   '(locally (declare (type integer a)))
-   '(locally (declare (type integer a)) a)
-   '(locally a)))
-;; 
-;; ;;;; MACROLET, FLET and LABELS
-;;
-;; (with-test (:name (sb-c:walk-forms :special-form macrolet))
-;;
-;;   (check-roundtrip-cases 'macrolet
-;;                          '(macrolet ())
-;;                          '(macrolet ((f ())))
-;;                          '(macrolet ((f (a &rest b) (declare (type string a)) a)))))
+(with-test (:name (sb-c:walk-forms sb-c:special-operator-info locally))
+  (check-walk-cases
+   '((locally)
+     ((sb-c:special-operator-info locally ())))
+   '((locally (declare (type integer a)))
+     ((sb-c:special-operator-info locally ())))
+   '((locally (declare (type integer a)) a)
+     ((sb-c:special-operator-info locally ())))
+   '((locally a)
+     ((sb-c:special-operator-info locally ())))))
+
+;;;; MACROLET, FLET and LABELS
+
+(with-test (:name (sb-c:walk-forms sb-c:special-operator-info macrolet))
+  (check-walk-cases ; TODO use the /environment variant?
+   '((macrolet ())
+     ((sb-c:special-operator-info macrolet
+       (:names () ()))))
+   '((macrolet ((f ())))
+     ((sb-c:special-operator-info macrolet
+       (:names (f) ()))))
+   '((macrolet ((f (a &rest b) (declare (type string a)) a)))
+     ((sb-c:special-operator-info macrolet
+       (:names (f) ()))))))
 ;;
 ;; (with-test (:name (sb-c:walk-forms :special-form flet))
 ;;
@@ -466,20 +589,31 @@
          :arguments ((cdr foo) 1)
          :where     :global))
        ((sb-c:application-info sb-kernel:%rplacd
-         (:where :global
+         (:where     :global
           :arguments (foo 1)))
         :arguments
         (((sb-c:variable-info foo (:where nil :access :read)))
          ((sb-c:self-evaluating-info 1 ())))))))))
-;; 
-;; ;;;; THROW, CATCH and UNWIND-PROTECT
-;;
-;; (with-test (:name (sb-c:walk-forms :special-form throw))
-;;
-;;   (check-roundtrip-cases 'throw
-;;                          '(throw 'foo 1)
-;;                          '(throw (get-tag) 2)))
-;;
+
+;;;; THROW, CATCH and UNWIND-PROTECT
+
+(with-test (:name (sb-c:walk-forms :special-form throw))
+  (check-walk-cases
+   '((throw 'foo 1)
+     ((sb-c:special-operator-info throw (:tag 'foo :result-form 1))
+      :tag
+      ((sb-c:special-operator-info quote (:thing foo)))
+      :result-form
+      ((sb-c:self-evaluating-info 1))))
+   '((throw (get-tag) 2)
+     ((sb-c:special-operator-info throw (:tag (get-tag) :result-form 2))
+      :tag
+      ((sb-c:named-application-info get-tag (:arguments () :where nil))
+       :arguments
+       ())
+      :result-form
+      ((sb-c:self-evaluating-info 2))))))
+
 ;; (with-test (:name (sb-c:walk-forms :special-form sb-c::%within-cleanup))
 ;;
 ;;   (check-roundtrip-cases 'sb-c::%within-cleanup
@@ -509,15 +643,22 @@
 ;;                          '(unwind-protect foo)
 ;;                          '(unwind-protect foo bar)
 ;;                          '(unwind-protect foo bar baz)))
-;; 
-;; ;;;; multiple-value stuff
-;;
-;; (with-test (:name (sb-c:walk-forms :special-form multiple-value-call))
-;;
-;;   (check-roundtrip-cases 'multiple-value-call
-;;                          '(multiple-value-call fun)
-;;                          '(multiple-value-call fun 1)))
-;;
+
+;;;; multiple-value stuff
+
+(with-test (:name (sb-c:walk-forms :special-form multiple-value-call))
+  (check-walk-cases
+   '((multiple-value-call fun)
+     ((sb-c:special-operator-info multiple-value-call (:function-form fun))
+      :function-form
+      ((sb-c:variable-info fun (:where nil :access :read)))))
+   '((multiple-value-call fun 1)
+     ((sb-c:special-operator-info multiple-value-call (:function-form fun :args (1)))
+      :function-form
+      ((sb-c:variable-info fun (:where nil :access :read)))
+      :args
+      (((sb-c:self-evaluating-info 1)))))))
+
 ;; (with-test (:name (sb-c:walk-forms :special-form multiple-value-prog1))
 ;;
 ;;   (check-roundtrip-cases 'multiple-value-prog1
@@ -550,6 +691,12 @@
       :body
       (((sb-c:variable-info x (:access :read :where nil))))
       :arguments nil))
+   ;; TODO declaration
+   '(((lambda () "doc" 1))
+     ((sb-c:lambda-application-info lambda
+       (:lambda-list () :documentation "doc" :body (1) :arguments ()))
+      :body
+      (((sb-c:self-evaluating-info 1)))))
    ;; TODO case with lexical variable in the body?
    ))
 
@@ -559,7 +706,8 @@
   (check-walk-cases
    '((+)
      ((sb-c:named-application-info + (:arguments () :where :global))
-      :arguments nil))
+      :arguments
+      ()))
    '((+ 1)
      ((sb-c:named-application-info + (:arguments (1) :where :global))
       :arguments
@@ -572,21 +720,22 @@
      env
      '((lexical)
        ((sb-c:named-application-info lexical
-         (:arguments ()
-          :where :lexical
-          :lambda-list (x)
+         (:arguments     ()
+          :where         :lexical
+          :lambda-list   (x)
           :documentation nil
-          :declarations ()
-          :body ((1+ x))))
-        :arguments nil))
+          :declarations  ()
+          :body          ((1+ x))))
+        :arguments
+        ()))
      '((lexical 1)
        ((sb-c:named-application-info lexical
-         (:arguments (1)
-          :where :lexical
-          :lambda-list (x)
+         (:arguments     (1)
+          :where         :lexical
+          :lambda-list   (x)
           :documentation nil
-          :declarations ()
-          :body ((1+ x))))
+          :declarations  ()
+          :body          ((1+ x))))
         :arguments
         (((sb-c:self-evaluating-info 1))))))))
 
@@ -594,7 +743,8 @@
   (check-walk-cases
    '((undefined)
      ((sb-c:named-application-info undefined (:arguments () :where nil))
-      :arguments nil))
+      :arguments
+      ()))
    '((undefined 1)
      ((sb-c:named-application-info undefined (:arguments (1) :where nil))
       :arguments
@@ -610,7 +760,8 @@
    '((return *)
      ((sb-c:macro-info return (:arguments (*) :expander :ignore :where :global))
       ((sb-c:special-operator-info return-from (:name nil :value *))
-       :value ((:variable * (:where :global :type t))))))))
+       :value
+       ((:variable * (:where :global :type t))))))))
 
 (with-test (:name (sb-c:walk-forms :macro :lexical))
   ;; TODO
