@@ -52,6 +52,64 @@
       (t
        (make-lambda-var :%source-name name)))))
 
+(defun signal-if-multiple-definitions (context names definitions
+                                       &key (signal-via #'compiler-error))
+  (let ((seen      '())
+        (offenders '()))
+    (loop :for name :in names
+       :for definition :in definitions :do
+       (let ((cell (find name seen :key #'car :test #'eq)))
+         (cond
+           ((not cell)
+            (push (setf cell (cons name (list))) seen))
+           ((= 1 (length (cdr cell)))
+            (push cell offenders)))
+         (push definition (cdr cell))))
+    (loop :for (name . definitions) :in offenders :do
+       (funcall signal-via "~@<Multiple definitions for ~S in ~A: ~
+                            ~{~A~^, ~}.~@:>"
+                name context definitions))))
+
+(declaim (ftype (sfunction (t (member :compile :eval) t &key (:allow-special t)) symbol)
+                check-variable-name-for-binding))
+(defun check-variable-name-for-binding (name evaluation-mode context
+                                        &key allow-special)
+  (check-variable-name name)            ; TODO evaluation-mode
+  (labels ((fail (control &rest args)
+             (ecase evaluation-mode
+               (:compile (apply #'compiler-error control args))
+               (:eval    (error 'simple-program-error ; TODO make a function
+                                :format-control control
+                                :format-arguments args))))
+           (fail/variable (kind)
+               (fail (progn #+no !uncross-format-control "~@<~/sb-impl:print-symbol-with-prefix/ names a ~
+                      ~(~A~) variable, and cannot be used in ~A.~:@>")
+                    name kind context)))
+    (let ((kind (info :variable :kind name)))
+      (case kind
+        (:macro
+         (program-assert-symbol-home-package-unlocked
+          context name (format nil "lexically binding ~~A in ~A" context)))
+        ((:constant :global)
+         (fail/variable kind))
+        (:special
+         (unless allow-special
+           (fail/variable kind))))))
+  name)
+
+(declaim (ftype (sfunction (t &optional t) lambda-var) varify-lambda-arg/new))
+(defun varify-lambda-arg/new (name &optional (context "lambda list"))
+  (check-variable-name-for-binding name :compile context :allow-special t)
+  (case (info :variable :kind name)
+    (:special
+     (let ((variable (find-free-var name)))
+       (make-lambda-var :%source-name name
+                        :type (leaf-type variable)
+                        :where-from (leaf-where-from variable)
+                        :specvar variable)))
+    (t
+     (make-lambda-var :%source-name name))))
+
 ;;; Make the default keyword for a &KEY arg, checking that the keyword
 ;;; isn't already used by one of the VARS.
 (declaim (ftype (sfunction (symbol list t) symbol) make-keyword-for-arg))
