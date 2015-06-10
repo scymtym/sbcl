@@ -110,6 +110,7 @@
              (:constructor make-operator-access-component
                            (name cardinality evaluated &key type access))
              (:copier nil))
+  ;; TODO
   (access nil :type (member nil :read :write :bind) :read-only t))
 
 ;; TODO alternative: two subclasses EVALUATED-COMPONENT, UNEVALUATED-COMPONENT
@@ -156,6 +157,11 @@
   (declare (notinline info)) ; TODO why is this necessary?
   (values (info :function :special-operator-info name)))
 
+(defun find-special-operator-info-or-lose (name)
+  (or (find-special-operator-info name)
+      (error (progn #+no !uncross-format-control "~@<~/sb-impl:print-symbol-with-prefix/ does not name a special operator.~@:>"
+                  name))))
+
 ;;; Install NEW-VALUE, a SPECIAL-OPERATOR-INFO instance for the
 ;;; special operator designated by NAME.
 #+TODO (declaim (ftype (sfunction (special-operator-info symbol) special-operator-info)
@@ -172,22 +178,41 @@
 
 ;;;; "runtime" support functions
 
+(define-condition operator-component-type-error (invalid-form-error
+                                                 type-error
+                                                 reference-condition)
+  ((component :initarg  :component
+              :reader   operator-component-type-error-component))
+  (:default-initargs
+   :component (missing-arg))
+  (:report
+   (lambda (condition stream)
+     (format stream "~@<~S special operator component ~A is ~S which ~
+                     is not of type ~S.~@:>"
+             (first (invalid-form-error-form condition))
+             (operator-component-type-error-component condition)
+             (type-error-datum condition)
+             (type-error-expected-type condition)))))
+
+(defun operator-component-type-error (operator component value type)
+  (compiler-error 'operator-component-type-error
+                  :form          (list operator) ; TODO
+                  :component     component
+                  :datum         value
+                  :expected-type type
+                  :references    `((:ansi-cl :special-operator ,operator))))
+
 (defun check-component-type/1 (operator-name component-name value type)
   (if (typep value type)
       value
-      (compiler-error
-       "~@<~S special operator component ~A is ~S which is not of type ~
-        ~S.~@:>"
-       operator-name component-name value type)))
+      (operator-component-type-error operator-name component-name value type)))
 
 (defun check-component-type/t (operator-name component-name value type)
   (let ((offender (position-if (lambda (element)
                                  (not (typep element type)))
                                value)))
     (if offender
-        (compiler-error
-         "~@<~S special operator component ~A element ~S is not of ~
-          type ~S.~@:>"
+        (operator-component-type-error
          operator-name component-name (nth offender value) type)
         value)))
 
@@ -818,13 +843,13 @@ FORMS are also processed as top level forms.")
 (defun parse-flet-binding (context spec)
   (cond
     ((or (atom spec) (< (length spec) 2)) ; TODO handle circularity, improper lists
-     (compiler-error "~@<The ~S definition spec ~S is malformed.~@:>"
+     (compiler-error "~@<The ~S definition spec ~S is malformed.~@:>" ; TODO more precise condition
                      context spec))
     (t
      (destructuring-bind (name lambda-list &rest body) spec
        (multiple-value-bind (body declarations documentation)
            (parse-body body)
-         (values (check-fun-name name) lambda-list
+         (values (check-fun-name name) lambda-list ; TODO more precise condition for invalid name
                  `(progn ,@body) declarations documentation))))))
 
 (defun unparse-flet-binding (name lambda-list documentation declarations body)
@@ -1045,7 +1070,7 @@ THROW)."))
 
 (define-special-operator multiple-value-call (function-form &rest args)
   ((:function-form 1)
-   (:args          t))
+   (:args          t)) ; TODO arguments? make this consistent
   #!+sb-doc
   (:documentation
    "MULTIPLE-VALUE-CALL function-form values-form*
@@ -1067,6 +1092,15 @@ VALUES-FORM."))
 ;;;; Pseudo-special operators and components for leafs, macros, lambda
 ;;;; applications and named applications.
 
+;;; In the application of a named function or access to a variable,
+;;; where was the function or variable defined? One of
+;;; :GLOBAL  - TODO
+;;; :LEXICAL -
+;;; NIL      - No function definition for the specified name
+(defglobal +where+
+    (make-operator-component :where 1 nil
+                             :type '(member nil :lexical :global)))
+
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defstruct (leaf-info
                (:include operator-info)
@@ -1078,10 +1112,11 @@ VALUES-FORM."))
                (:constructor make-variable-info (&rest components))
                (:copier nil))))
 
+;;; Access to a variable
 (defglobal +variable-access+
     (make-operator-component :access 1 nil))
 
-(defglobal +variable+ (make-variable-info +variable-access+)) ; TODO where
+(defglobal +variable+ (make-variable-info +where+ +variable-access+))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defstruct (self-evaluating-info
@@ -1137,6 +1172,8 @@ VALUES-FORM."))
 (defglobal +lambda-application+
     (make-lambda-application-info
      +application-lambda-list+
+     +lexical-function-documentation+ ; TODO rename, re-order
+     +application-declarations+
      +lambda-body+
      +application-arguments+))
 
@@ -1149,15 +1186,6 @@ VALUES-FORM."))
 (defglobal +lexical-function-body+
     (make-operator-component :body 1 nil))
 
-;;; In the application of a named function, where was the function
-;;; defined? One of
-;;; :GLOBAL  - TODO
-;;; :LEXICAL -
-;;; NIL      - No function definition for the specified name
-(defglobal +function-where+
-    (make-operator-component :where 1 nil
-                             :type '(member nil :lexical :global)))
-
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defstruct (named-application-info
                (:include application-info)
@@ -1165,9 +1193,15 @@ VALUES-FORM."))
                              (&rest components))
                (:copier nil))))
 
+(defglobal +definition+
+    (make-operator-component :definition 1 nil))
+
 (defglobal +named-application+
     (make-named-application-info
-     +function-where+
+     +where+
+
+     +definition+ ; TODO hack
+
      +application-lambda-list+
      +lexical-function-documentation+
      +application-declarations+
