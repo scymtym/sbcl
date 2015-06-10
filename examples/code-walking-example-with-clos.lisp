@@ -27,9 +27,9 @@
 (defmethod initialize-instance :after ((instance base-walker) &key)
   (sb-mop:set-funcallable-instance-function
    instance
-   (lambda (instead recurse #+no reconstitute form kind name &rest components)
-     (apply #'walk-form instance form kind name
-            instead recurse #+no reconstitute components))))
+   (lambda (instead recurse reconstitute form kind name &rest components)
+     (apply #'walk-form/reconstitute instance form kind name
+            instead recurse reconstitute components))))
 
 (defmethod walk-form ((walker base-walker)
                       (form t) (kind t) (name t)
@@ -116,10 +116,11 @@
   ()
   (:metaclass sb-mop:funcallable-standard-class))
 
-(defmethod walk-form ((walker my-walker)
-                      (form t) (kind sb-c:special-operator-info) (name (eql 'let))
-                      (instead t) (recurse t) (reconstitute t)
-                      &rest components &key names values suppliedps body)
+(defmethod walk-form/reconstitute
+    ((walker my-walker)
+     (form t) (kind sb-c:special-operator-info) (name (eql 'let))
+     (instead t) (recurse t) (reconstitute t)
+     &rest components &key names values suppliedps body)
   ;; Remove all bindings with name B.
   (loop :for name* :in names
      :for value :in (second (funcall recurse :components (list :values values)))
