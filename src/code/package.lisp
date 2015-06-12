@@ -91,8 +91,8 @@
   ;; packages that use this package
   (%used-by-list () :type list)
   ;; PACKAGE-HASHTABLEs of internal & external symbols
-  (internal-symbols nil :type package-hashtable)
-  (external-symbols nil :type package-hashtable)
+  (internal-symbols (missing-arg) :type package-hashtable)
+  (external-symbols (missing-arg) :type package-hashtable)
   ;; shadowing symbols
   ;; Todo: dynamically changeover to a PACKAGE-HASHTABLE if list gets long
   (%shadowing-symbols () :type list)
