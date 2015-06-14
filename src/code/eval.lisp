@@ -204,15 +204,8 @@
                 ;;   PROGRAM-ERROR, then to use it here and in (probably
                 ;;   dozens of) other places where the same problem
                 ;;   arises.
-                (multiple-value-bind (body ct lt e)
-                    (funcall (sb!c::special-operator-info-parser
-                              (sb!c::find-special-operator-info 'eval-when))
-                             (lambda (&key situations forms)
-                               (multiple-value-call #'values
-                                 forms (sb!c:parse-eval-when-situations
-                                        situations)))
-                             exp)
-                  (declare (ignore ct lt))
+                (sb!c:with-parsed-special-operator
+                    (exp 'eval-when &key situations forms)
                   ;; CLHS 3.8 - Special Operator EVAL-WHEN: The use of
                   ;; the situation :EXECUTE (or EVAL) controls whether
                   ;; evaluation occurs for other EVAL-WHEN forms; that
@@ -221,8 +214,8 @@
                   ;; :EXECUTE situation is specified in such a form,
                   ;; then the body forms are processed as an implicit
                   ;; PROGN; otherwise, the EVAL-WHEN form returns NIL.
-                  (when e
-                    (simple-eval-progn-body body lexenv))))
+                  (when (nth-value 2 (sb!c:parse-eval-when-situations situations))
+                    (simple-eval-progn-body forms lexenv))))
                ((locally)
                 (simple-eval-locally exp lexenv))
                ((macrolet)

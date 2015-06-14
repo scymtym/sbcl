@@ -423,6 +423,10 @@ of SBCL which maintained the CMU-CL-style split into two packages.)"
                "MACRO-INFO" "COMPILER-MACRO-INFO" "SYMBOL-MACRO-INFO"
                "SETQ-WITH-SYMBOL-MACROS-INFO"
 
+               "FIND-SPECIAL-OPERATOR-INFO"
+               "FIND-SPECIAL-OPERATOR-INFO-OR-LOSE"
+               "WITH-PARSED-SPECIAL-OPERATOR"
+
                "WALK-FORMS"
                "WALK-FORMS/RECONSTITUTE"
 

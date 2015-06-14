@@ -1034,17 +1034,14 @@
                    #+no (source-name source-name)
                    #+no (debug-name debug-name)
                    #+no debug-catch)
-           (funcall
-            (special-operator-info-parser
-             (find-special-operator-info 'function))
-            (lambda (&key lambda-list declarations documentation body)
-              (apply #'ir1-convert-lambda/new
-                     instead recurse thing lambda-list declarations documentation body
-                     args
-                     #+no (:maybe-add-debug-catch debug-catch
-                           :source-name source-name
-                           :debug-name debug-name)))
-            `(function ,form))))
+           (with-parsed-special-operator (`(function ,form) 'function
+                                          &key lambda-list declarations documentation body)
+             (apply #'ir1-convert-lambda/new
+                    instead recurse thing lambda-list declarations documentation body
+                    args
+                    #+no (:maybe-add-debug-catch debug-catch
+                          :source-name source-name
+                          :debug-name debug-name)))))
    (ecase (car thing) ; TODO do this properly
      ((lambda)
       (convert thing :maybe-add-debug-catch t :source-name source-name :debug-name debug-name))
