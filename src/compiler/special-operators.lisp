@@ -74,7 +74,7 @@
 ;;; Syntax-level information about a syntactic component of a
 ;;; (special) operator. For example, the special operator (return-from
 ;;; BLOCK-NAME VALUE) has the two components BLOCK-NAME and VALUE.
-(defstruct (operator-component
+(def!struct (operator-component
              (:constructor make-operator-component
                            (name cardinality evaluated &key type))
              (:copier nil))
@@ -103,9 +103,9 @@
   ;;
   ;; Example: in (return-from BLOCK-NAME VALUE), BLOCK-NAME must be of
   ;; type SYMBOL.
-  (type        t                        :read-only t))
+  (type        t                        :read-only t)) ; TODO form-type and evaluated-type
 
-(defstruct (operator-access-component
+(def!struct (operator-access-component
              (:include operator-component)
              (:constructor make-operator-access-component
                            (name cardinality evaluated &key type access))
@@ -116,7 +116,7 @@
 ;; TODO alternative: two subclasses EVALUATED-COMPONENT, UNEVALUATED-COMPONENT
 
 ;;; Syntax-level information about an operator.
-(defstruct (operator-info
+(def!struct (operator-info
              (:copier nil))
   ;; A description the syntactic components of the special operator
   ;; including whether they are evaluated (OPERATOR-COMPONENT
@@ -130,7 +130,7 @@
 
 ) ; eval-when
 
-(defstruct (special-operator-info
+(def!struct (special-operator-info
              (:include operator-info)
              (:constructor make-special-operator-info
                            (name components parser unparser))
@@ -249,10 +249,13 @@ function) encounters an invalid form."))
              (first (invalid-form-error-form condition))
              (operator-component-type-error-component condition)
              (type-error-datum condition)
-             (type-error-expected-type condition)))))
+             (type-error-expected-type condition))))
+  #!+sb-doc
+  (:documentation
+   "TODO"))
 
 (defun operator-component-type-error (operator component value type)
-  (compiler-error 'operator-component-type-error
+  (compiler-error 'operator-component-type-error ; TODO error vs. compiler-error should depend on context
                   :form          (list operator) ; TODO
                   :component     component
                   :datum         value
@@ -450,7 +453,7 @@ function) encounters an invalid form."))
                   `(,(required rest-component)))
                  (t
                   '(()))))))))
-
+;; TODO expand-...
 (defun make-special-operator-expansion (name lambda-list components
                                         &key
                                         (parser        nil parser-supplied-p)
@@ -1106,7 +1109,7 @@ VAR.")
 ;;;; THROW, CATCH and UNWIND-PROTECT
 
 (define-special-operator throw (tag result-form)
-  ((:tag         1)
+  ((:tag         1) ; TODO :evaluated-type symbol
    (:result-form 1))
   #!+sb-doc
   (:documentation
@@ -1146,7 +1149,7 @@ whose tag is EQ to TAG."))
   ((:name 1 :evaluated nil :type sb!impl::function-name)))
 
 (define-special-operator catch (tag &rest body)
-  ((:tag  1)
+  ((:tag  1) ; TODO :evaluated-type symbol
    (:body t))
   #!+sb-doc
   (:documentation
@@ -1205,12 +1208,12 @@ VALUES-FORM."))
                              :type '(member nil :lexical :global)))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defstruct (leaf-info
+  (def!struct (leaf-info
                (:include operator-info)
                (:constructor nil)
                (:copier nil)))
 
-  (defstruct (variable-info
+  (def!struct (variable-info
                (:include leaf-info)
                (:constructor make-variable-info (&rest components))
                (:copier nil))))
@@ -1222,7 +1225,7 @@ VALUES-FORM."))
 (defglobal +variable+ (make-variable-info +where+ +variable-access+))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defstruct (self-evaluating-info
+  (def!struct (self-evaluating-info
                (:include leaf-info)
                (:constructor make-self-evaluating-info ())
                (:copier nil))))
@@ -1230,7 +1233,7 @@ VALUES-FORM."))
 (defglobal +self-evaluating+ (make-self-evaluating-info))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defstruct (%leaf-info
+  (def!struct (%leaf-info
                (:include leaf-info)
                (:constructor make-%leaf-info ())
                (:copier nil))))
@@ -1238,7 +1241,7 @@ VALUES-FORM."))
 (defglobal +leaf+ (make-%leaf-info))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defstruct (application-info
+  (def!struct (application-info
                (:include operator-info)
                (:constructor nil)
                (:copier nil))))
@@ -1320,12 +1323,12 @@ VALUES-FORM."))
     (make-operator-component :arguments t nil))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defstruct (macroid-info
+  (def!struct (macroid-info
                (:include operator-info)
                (:constructor nil)
                (:copier nil)))
 
-  (defstruct (macro-info
+  (def!struct (macro-info
                (:include macroid-info)
                (:constructor make-macro-info (&rest components))
                (:copier nil))))
@@ -1334,7 +1337,7 @@ VALUES-FORM."))
     (make-macro-info +macro-expander+ +macro-arguments+))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defstruct (compiler-macro-info
+  (def!struct (compiler-macro-info
                (:include macroid-info)
                (:constructor make-compiler-macro-info (&rest components))
                (:copier nil))))
@@ -1343,7 +1346,7 @@ VALUES-FORM."))
     (make-compiler-macro-info +macro-expander+ +macro-arguments+))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defstruct (symbol-macro-info
+  (def!struct (symbol-macro-info
                (:include macroid-info)
                (:constructor make-symbol-macro-info (&rest components))
                (:copier nil))))
@@ -1359,7 +1362,7 @@ VALUES-FORM."))
     (make-operator-component :arguments t nil))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defstruct (setq-with-symbol-macros-info
+  (def!struct (setq-with-symbol-macros-info
                (:include macroid-info)
                (:constructor make-setq-with-symbol-macros-info
                              (&rest components))
