@@ -38,42 +38,6 @@
 
 ;;;; WALK-FORMS function
 
-;;; Conditions
-
-(define-condition invalid-component-error (error)
-  ((info      :initarg :info
-              :type    operator-info
-              :reader  invalid-component-error-info)
-   (component :initarg :component
-              :type    keyword
-              :reader  invalid-component-error-component))
-  (:default-initargs
-   :info      (missing-arg)
-   :component (missing-arg))
-  (:report (lambda (condition stream)
-             (format stream "~@<Component ~S is invalid for a ~A ~
-                             form.~@:>"
-                     (invalid-component-error-component condition)
-                     (invalid-component-error-info condition))))
-  #!+sb-doc
-  (:documentation
-   "This error is signaled if an attempt is made to recurse into a
-non-existent component of a form in the contexts of WALK-FORMS."))
-
-(define-condition invalid-form-error (program-error)
-  ((form :initarg :form
-         :type    keyword
-         :reader  invalid-form-error-form))
-  (:default-initargs
-   :form (missing-arg))
-  (:report (lambda (condition stream)
-             (format stream "~@<Invalid form: ~S.~@:>"
-                     (invalid-form-error-form condition))))
-  #!+sb-doc
-  (:documentation
-   "This error is signaled if the compiler (or the WALK-FORMS
-function) encounters an invalid form."))
-
 ;;; Helper functions
 (defun %cannot-recurse (&key components function)
   (declare (ignore function))

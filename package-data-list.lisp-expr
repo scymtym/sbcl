@@ -411,6 +411,8 @@ of SBCL which maintained the CMU-CL-style split into two packages.)"
                "INVALID-COMPONENT-ERROR-COMPONENT"
                "INVALID-FORM-ERROR"
                "INVALID-FORM-ERROR-FORM"
+               "OPERATOR-COMPONENT-TYPE-ERROR"
+               "OPERATOR-COMPONENT-TYPE-COMPONENT"
 
                "LEAF-INFO"
                "VARIABLE-INFO" "SELF-EVALUATING-INFO" "%LEAF-INFO"

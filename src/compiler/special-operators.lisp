@@ -177,8 +177,63 @@
               "~@<~S already names the special operator info ~A~@:>"
               name old)))
   (setf (info :function :special-operator-info name) new-value))
+
+(def!macro with-parsed-special-operator ((form name &rest components)
+                                         &body body
+                                         &environment env)
+  (declare (ignore env)) ; TODO temp
+  ;; Compile-time check existence of the NAME special operator.
+  (let ((constantp nil #+TODO-make-this-work (constantp name env)))
+    (when constantp
+      (find-special-operator-info-or-lose (eval name))) ; TODO compiler-macro on find-special-operator-info[-or-lose] instead
+    `(let ((parser ,(if constantp
+                        `(load-time-value
+                          (special-operator-info-parser
+                           (find-special-operator-info-or-lose ',(eval name)))
+                          t)
+                        `(special-operator-info-parser
+                          (find-special-operator-info-or-lose ,name)))))
+       (dx-flet ((with-parsed-special-opertor-thunk ,components
+                   ,@body))
+         (funcall parser #'with-parsed-special-opertor-thunk ,form)))))
 
-;;;; "runtime" support functions
+;;;; "runtime" support
+
+;;; Conditions TODO move to some other file?
+
+(define-condition invalid-component-error (error)
+  ((info      :initarg :info
+              :type    operator-info
+              :reader  invalid-component-error-info)
+   (component :initarg :component
+              :type    keyword
+              :reader  invalid-component-error-component))
+  (:default-initargs
+   :info      (missing-arg)
+   :component (missing-arg))
+  (:report (lambda (condition stream)
+             (format stream "~@<Component ~S is invalid for a ~A ~
+                             form.~@:>"
+                     (invalid-component-error-component condition)
+                     (invalid-component-error-info condition))))
+  #!+sb-doc
+  (:documentation
+   "This error is signaled if an attempt is made to recurse into a
+non-existent component of a form in the contexts of WALK-FORMS."))
+
+(define-condition invalid-form-error (program-error)
+  ((form :initarg :form
+         :type    keyword
+         :reader  invalid-form-error-form))
+  (:default-initargs
+   :form (missing-arg))
+  (:report (lambda (condition stream)
+             (format stream "~@<Invalid form: ~S.~@:>"
+                     (invalid-form-error-form condition))))
+  #!+sb-doc
+  (:documentation
+   "This error is signaled if the compiler (or the WALK-FORMS
+function) encounters an invalid form."))
 
 (define-condition operator-component-type-error (invalid-form-error
                                                  type-error
