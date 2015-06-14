@@ -159,8 +159,10 @@
 
 (defun find-special-operator-info-or-lose (name)
   (or (find-special-operator-info name)
-      (error (progn #+no !uncross-format-control "~@<~/sb-impl:print-symbol-with-prefix/ does not name a special operator.~@:>"
-                  name))))
+      (error (!uncross-format-control
+              "~@<~/sb-impl:print-symbol-with-prefix/ ~
+               does not name a special operator.~@:>")
+             name)))
 
 ;;; Install NEW-VALUE, a SPECIAL-OPERATOR-INFO instance for the
 ;;; special operator designated by NAME.
@@ -634,7 +636,7 @@ of the TAGBODY."))
   #'equal)
 
 (deftype eval-when-situation ()
-    `(member ,@+eval-when-situations+))
+  `(member ,@+eval-when-situations+))
 
 (define-special-operator eval-when (situations &rest forms)
   ((:situations t :evaluated nil :type eval-when-situation)
@@ -652,8 +654,8 @@ COMPILE, LOAD, or EVAL)."))
 ;;; situations present in the list.
 (defun parse-eval-when-situations (situations)
   (awhen (intersection situations '(compile load eval))
-    (style-warn "~@<Using deprecated ~S situation names~{ ~S~}.~@:>"
-                'eval-when it))
+    (style-warn "~@<Using deprecated ~S situation name~P ~{~S~^, ~}.~@:>"
+                'eval-when (length it) it))
   (values (intersection '(:compile-toplevel compile) situations)
           (intersection '(:load-toplevel load) situations)
           (intersection '(:execute eval) situations)))
@@ -673,8 +675,18 @@ Return VALUE without evaluating it."))
 (define-special-operator %%allocate-closures (&rest leaves)
   ((:leaves t)))
 
+;; There are two cases for this special operator:
+;; 1) (function NAME)
+;; 2) (function (lambda LAMBDA-LIST [DECLARATIONS] [DOCUMENTATION] BODY))
+;; which produce disjoint sets of components, namely:
+;; 1) :name NAME
+;; 2) :lambda-list LAMBDA-LIST :declarations DECLARATIONS ...
+;; In 2), the :declarations and :documentation components are omitted
+;; if they are not present in the form being processed.
 (define-special-operator function (thing)
-  ((:name          ? :evaluated nil)
+  (;; Components for (function NAME) case.
+   (:name          ? :evaluated nil)
+   ;; Components for (function (lambda (...) ...)) case.
    (:lambda-list   ? :evaluated nil)
    (:declarations  t :evaluated nil)
    (:documentation ? :evaluated nil)
@@ -716,9 +728,11 @@ may also be a lambda expression.")
             (error "~@<Exactly one of ~S and ~S must be supplied.~@:>"
                    :name :lambda-list))))))
 
+;; TODO explain
 (define-special-operator global-function (thing)
   ((:thing 1 :evaluated nil)))
 
+;; TODO explain
 (define-special-operator %funcall (function &rest args)
   ((:function 1 :evaluated nil) ; TODO type (or (cons (member function global-function) ?)
    (:args     t)))
@@ -780,10 +794,10 @@ may also be a lambda expression.")
                    ;; Components in reverse evaluation-order.
                    (component :body           forms)
                    (component :declarations   declarations)
+                   (component :names          names)
                    ,(when suppliedp-p
                       '(component :suppliedps      supplieds))
-                   (component ,values-keyword values)
-                   (component :names          names)))
+                   (component ,values-keyword values)))
                 (:unparser
                  `(,(mapcar #',bindings-unparser
                             (component :names)
@@ -878,7 +892,8 @@ PROGV form."))
          (values (check-fun-name name) lambda-list ; TODO more precise condition for invalid name
                  `(progn ,@body) declarations documentation))))))
 
-(defun unparse-flet-binding (name lambda-list documentation declarations body)
+(defun unparse-function-like-binding
+    (name lambda-list documentation declarations body)
   `(,name ,lambda-list
     ,@(when documentation `(,documentation))
     ,@declarations
@@ -913,7 +928,7 @@ PROGV form."))
                    (component :lambda-lists       lambda-lists)
                    (component :names              names)))
                 (:unparser
-                 `(,(mapcar #'unparse-flet-binding
+                 `(,(mapcar #'unparse-function-like-binding
                             (component :names)
                             (component :lambda-lists)
                             (component :documentations)
@@ -1189,6 +1204,12 @@ VALUES-FORM."))
 (defglobal +application-declarations+
     (make-operator-component :declarations t nil))
 
+;;; In the application of a lexical function, the documentation in the
+;;; body of the function.
+(defglobal +application-documentation+
+    (make-operator-component :documentation 1 nil
+                             :type '(or null string)))
+
 ;;; In the application of a LAMBDA form (i.e. ((LAMBDA ...) ...) or
 ;;; the application of a lexical function, the body of the lambda form
 ;;; or lexical function (not including declarations).
@@ -1205,22 +1226,16 @@ VALUES-FORM."))
 (defglobal +lambda-application+
     (make-lambda-application-info
      +application-lambda-list+
-     +lexical-function-documentation+ ; TODO rename, re-order
      +application-declarations+
+     +application-documentation+
      +lambda-body+
      +application-arguments+))
-
-;;; In the application of a lexical function, the documentation in the
-;;; body of the function.
-(defglobal +lexical-function-documentation+
-    (make-operator-component :documentation 1 nil
-                             :type '(or null string)))
 
 (defglobal +lexical-function-body+
     (make-operator-component :body 1 nil))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defstruct (named-application-info
+  (def!struct (named-application-info
                (:include application-info)
                (:constructor make-named-application-info
                              (&rest components))
@@ -1236,8 +1251,8 @@ VALUES-FORM."))
      +definition+ ; TODO hack
 
      +application-lambda-list+
-     +lexical-function-documentation+
      +application-declarations+
+     +application-documentation+
      +lexical-function-body+
      +application-arguments+))
 
