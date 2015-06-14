@@ -1295,7 +1295,7 @@ necessary, since type inference may take arbitrarily long to converge.")
           (t
            *top-level-form-noted*))))
 
-;;; Handle the evaluation the a :COMPILE-TOPLEVEL body during
+;;; Handle the evaluation of a :COMPILE-TOPLEVEL body during
 ;;; compilation. Normally just evaluate in the appropriate
 ;;; environment, but also compile if outputting a CFASL.
 (defun eval-compile-toplevel (body path)
@@ -1308,7 +1308,7 @@ necessary, since type inference may take arbitrarily long to converge.")
         (frob)
         (let* ((*lexenv*
                 (make-lexenv
-                 :policy (process-optimize-decl
+                 :policy (process-optimize-decl ; TODO merge-policies?
                           `(optimize ,@(policy-to-decl-spec *macro-policy*))
                           (lexenv-policy *lexenv*))
                  :default *lexenv*))

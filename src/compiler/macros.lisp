@@ -739,7 +739,7 @@
          (*constants* (make-hash-table :test 'equal)))
      (unwind-protect
           (progn ,@forms)
-       (clrhash *free-funs*)
+       (clrhash *free-funs*) ; TODO is this some gc trick? is it still necessary?
        (clrhash *free-vars*)
        (clrhash *constants*))))
 
@@ -773,7 +773,7 @@
 
 ;;; FIXME: This seems to be useful for troubleshooting and
 ;;; experimentation, not for ordinary use, so it should probably
-;;; become conditional on SB-SHOW.
+;;; become conditional on SB-SHOW. TODO also move it into a separate file
 
 (eval-when (#-sb-xc :compile-toplevel :load-toplevel :execute)
 
