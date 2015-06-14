@@ -1360,7 +1360,7 @@ VALUES-FORM."))
     (make-operator-component :arguments t nil))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defstruct (setq-with-symbol-macros-info
+  (def!struct (setq-with-symbol-macros-info
                (:include macroid-info)
                (:constructor make-setq-with-symbol-macros-info
                              (&rest components))
