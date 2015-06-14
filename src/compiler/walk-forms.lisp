@@ -417,32 +417,19 @@ TODO explain"
                  ;; info.
                  (:special-form info
                   (let ((name (special-operator-info-name info)))
-                    (funcall
-                     (special-operator-info-parser info) ; TODO add hyperspec reference if parse fails
-                     (lambda (&rest components)
-                       (apply #'process-application-like/maybe-setq
-                              function form info name components))
-                     form)))
+                    (with-parsed-special-operator (form name &rest components) ; TODO add hyperspec reference if parse fails
+                      (apply #'process-application-like/maybe-setq
+                             function form info name components))))
 
                  ;; ((lambda ...) ...) => application with lambda-list
                  ;; and body as extra information.
                  (:lambda-application
-                  (funcall (special-operator-info-parser (find-special-operator-info 'function)) ; TODO load-time-value or whatever
-                           (lambda (&rest args)
-                             (apply #'process-application-like
-                                    function form +lambda-application+ 'lambda
-                                    :arguments (rest form)
-                                    args))
-                           `(function ,(first form)))
-                  #+no (destructuring-bind ((lambda lambda-list &rest body)
-                                       &rest arguments)
-                      form
-                    (declare (ignore lambda))
-                    (process-application-like
-                     function form +lambda-application+ 'lambda
-                     :lambda-list lambda-list
-                     :body        body
-                     :arguments   arguments)))
+                  (with-parsed-special-operator (`(function ,(first form)) 'function
+                                                 &rest components)
+                    (apply #'process-application-like
+                           function form +lambda-application+ 'lambda
+                           :arguments (rest form)
+                           components)))
 
                  ;; Application of named things: [compiler-]macros and
                  ;; functions.
