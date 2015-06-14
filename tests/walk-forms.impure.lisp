@@ -419,7 +419,7 @@
   ;; TODO
   )
 
-;;;; SYMBOL-MACROLET, LET[*] and LOCALLY
+;;;; SYMBOL-MACROLET, LET[*], LOCALLY and PROGV
 
 (with-test (:name (sb-c:walk-forms sb-c:special-operator-info symbol-macrolet))
   (check-walk-cases ; TODO use /environment variant?
@@ -508,6 +508,14 @@
      ((sb-c:special-operator-info locally ())))
    '((locally a)
      ((sb-c:special-operator-info locally ())))))
+
+(with-test (:name (sb-c:walk-forms sb-c:special-operator-info progv))
+  (check-walk-cases
+   '((progv () ()))
+   '((progv '(a) '(1)))
+   '((progv (foo) '(1)))
+   '((progv () () 1))
+   '((progv () () 1 2))))
 
 ;;;; MACROLET, FLET and LABELS
 

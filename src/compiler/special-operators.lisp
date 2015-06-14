@@ -723,7 +723,7 @@ may also be a lambda expression.")
   ((:function 1 :evaluated nil) ; TODO type (or (cons (member function global-function) ?)
    (:args     t)))
 
-;;;; SYMBOL-MACROLET, LET[*] and LOCALLY
+;;;; SYMBOL-MACROLET, LET[*], LOCALLY and PROGV
 
 (defun parse-variable-like-bindings (context bindings binding-parser)
   (collect ((names) (value-forms) (suppliedps))
@@ -836,6 +836,21 @@ FORMS are also processed as top level forms.")
      (component :declarations declarations)))
   (:unparser
    (append (component :declarations) (component :body))))
+
+(define-special-operator progv (symbols values &rest forms)
+  ((:symbols 1)
+   (:values  1)
+   (:forms   t))
+  #!+sb-doc
+  (:documentation
+   "PROGV symbols values form*
+
+Evaluate SYMBOLS producing a list of symbols and VALUES producing a
+list of values, then dynamically bind the symbols to the values while
+evaluating FORMS. Excess values produced by VALUES are discarded,
+excess symbols produced SYMBOLS are made unbound. All bindings
+\(including making variables unbound) are undone on exit from the
+PROGV form."))
 
 ;;;; MACROLET, FLET and LABELS
 

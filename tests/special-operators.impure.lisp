@@ -111,7 +111,7 @@
   ;; TODO
   )
 
-;;;; SYMBOL-MACROLET, LET[*] and LOCALLY
+;;;; SYMBOL-MACROLET, LET[*], LOCALLY and PROGV
 
 (with-test (:name (:special-operator symbol-macrolet))
   (check-error-cases 'symbol-macrolet
@@ -142,6 +142,14 @@
     '(locally (declare (type integer a)))
     '(locally (declare (type integer a)) a)
     '(locally a)))
+
+(with-test (:name (:special-operator progv))
+  (check-roundtrip-cases 'progv
+    '(progv () ())
+    '(progv '(a) '(1))
+    '(progv (foo) '(1))
+    '(progv () () 1)
+    '(progv () () 1 2)))
 
 ;;;; MACROLET, FLET and LABELS
 
