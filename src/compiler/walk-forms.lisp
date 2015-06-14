@@ -579,7 +579,7 @@ and COMPONENTS* respectively."
        (when (lambda-var-p variable)
          (values :variable :lexical)))
       ((cons (eql variable))
-       (values :variable :lexical))
+       (values :variable :lexical (second variable) (third variable)))
       ((cons (eql macro))
        (values :symbol-macro :lexical nil
                (list :expansion (cdr variable))))
@@ -625,10 +625,10 @@ and COMPONENTS* respectively."
     (when (eq kind :symbol-macro)
       (list kind where type plist)))) ; TODO make-symbol-macro-info
 
-(defun note-lexical-variable (name env)
+(defun note-lexical-variable (name env &rest plist &key &allow-other-keys)
   #!+sb-doc
   "TODO"
-  (push `(,name . (variable)) (lexenv-vars env)))
+  (push `(,name . (variable nil ,plist)) (lexenv-vars env)))
 
 ;;; Function and (compiler-)macro lookup
 
