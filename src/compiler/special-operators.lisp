@@ -718,6 +718,16 @@ COMPILE, LOAD, or EVAL)."))
           (intersection '(:load-toplevel load) situations)
           (intersection '(:execute eval) situations)))
 
+(define-special-operator load-time-value (form &optional read-only-p)
+  ((:form        1)
+   (:read-only-p ? :evaluated nil :type boolean)) ; TODO include type-error in test, also TODO test
+  #!+sb-doc
+  (:documentation
+   "Arrange for FORM to be evaluated at load-time and use the value
+produced as if it were a constant. If READ-ONLY-P is non-NIL, then the
+resultant object is guaranteed to never be modified, so it can be put
+in read-only storage."))
+
 (define-special-operator %primitive (name &rest args)
   ((:name 1 :evaluated nil :type symbol)
    (:args t)))
