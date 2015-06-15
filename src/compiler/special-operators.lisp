@@ -365,7 +365,7 @@ function) encounters an invalid form."))
            spec)
          (optional (spec)
            (destructuring-bind (name value) spec
-             `((when ,value (list ,name ,value))))))
+             `((when ,value (list ,name ,value)))))) ; TODO since check is in VALUE, performs check twice
     (binding* (((nil required-parameters optional-parameters rest-parameter)
                 (parse-lambda-list lambda-list))
                (rest-parameter (first rest-parameter)) ; TODO ugly
