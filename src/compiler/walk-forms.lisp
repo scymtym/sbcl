@@ -594,8 +594,10 @@ and COMPONENTS* respectively."
     #+TODO (when (and (eq kind :unknown) (not (check-deprecated-variable form)))
       )
     (ecase kind
-      ((:global :special)
-       (values :variable :global type)) ; TODO put type into plist?
+      (:global
+       (values :variable :global type))
+      (:special
+       (values :variable :global type '(:special t))) ; TODO put type into plist?
       (:constant
        (values :variable :global type '(:constant t)))
       (:macro
