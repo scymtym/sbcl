@@ -1,5 +1,21 @@
 (in-package :sb-cltl2)
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (sb-c::define-special-operator compiler-let (bindings &rest forms)
+    ((:names  t :type symbol :access :bind)
+     (:values t)
+     (:body   t))
+    #+sb-doc
+    (:documentation
+     "COMPILER-LET ({(var [value]) | var}*) declaration* form*
+
+TODO")))
+
+(sb-c::define-ir1-translator compiler-let ((names values body)
+                                           instead recurse start next result)
+    (progv names (mapcar #'eval values)
+      (funcall recurse :components (list :body body))))
+
 (def-ir1-translator compiler-let ((bindings &rest forms) start next result)
   (loop for binding in bindings
      if (atom binding)
