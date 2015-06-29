@@ -38,45 +38,49 @@
 (defmacro form-case (form &body clauses)
   (with-unique-names (form-var)
     (let (seen)
-      (flet ((process-clause (clause)
-               (destructuring-bind (kind &rest body) clause
-                 (when (member kind seen)
-                   (error "~@<Multiple ~S clauses~@:>" kind))
-                 (push kind seen)
-                 (flet ((make-body (body)
-                          `((return-from nil (progn ,@body)))))
-                   (ecase kind
-                     ;; CLHS 3.1.2.1.1 Symbols as Forms
-                     (:variable
-                      `(when (sb!impl::legal-variable-name-p ,form-var)
-                         ,@(make-body body)))
-                     ;; SBCL extension
-                     (:leaf
-                      `(when (leaf-p ,form-var)
-                         ,@(make-body body)))
-                     ;; CLHS 3.1.2.1.3 Self-Evaluating Objects
-                     (:self-evaluating
-                      `(when (atom ,form-var)
-                         ,@(make-body body)))
-                     ;; CLHS 3.1.2.1.2 Conses as Forms
-                     ;; CLHS 3.1.2.1.2.1 Special Forms
-                     (:special-form
-                      `(when (typep ,form-var '(cons symbol)) ; TODO use SPECIAL-OPERATOR-P when possible?
-                         (let ((,(first body) (find-special-operator-info
-                                               (first ,form-var))))
-                           (when ,(first body)
-                             ,@(make-body (rest body))))))
-                     ;; CLHS 3.1.2.1.2.4 Lambda Forms
-                     (:lambda-application
-                      `(when (typep ,form-var '(cons (cons (eql lambda))))
-                         ,@(make-body body)))
-                     ;; CLHS 3.1.2.1.2.2 Macro Forms
-                     ;; CLHS 3.1.2.1.2.3 Function Forms
-                     (:named-application
-                      `(when (typep ,form-var '(cons symbol))
-                         ,@(make-body body)))
-                     ((t otherwise)
-                      `(progn ,@body)))))))
+      (labels ((make-compound-form-test (head)
+                 `(and (typep ,form-var '(cons ,head))
+                       (proper-list-p ,form-var))) ; TODO correct? also for macros?
+               (process-clause (clause)
+                 (destructuring-bind (kind &rest body) clause
+                   (when (member kind seen)
+                     (error "~@<Multiple ~S clauses~@:>" kind))
+                   (push kind seen)
+                   (flet ((make-body (body)
+                            `((return-from nil (progn ,@body)))))
+                     (ecase kind
+                       ;; CLHS 3.1.2.1.1 Symbols as Forms
+                       (:variable
+                        `(when (sb!impl::legal-variable-name-p ,form-var)
+                           ,@(make-body body)))
+                       ;; SBCL extension
+                       (:leaf
+                        `(when (leaf-p ,form-var)
+                           ,@(make-body body)))
+                       ;; CLHS 3.1.2.1.3 Self-Evaluating Objects
+                       (:self-evaluating
+                        `(when (atom ,form-var)
+                           ,@(make-body body)))
+                       ;; CLHS 3.1.2.1.2 Conses as Forms
+                       ;; CLHS 3.1.2.1.2.1 Special Forms
+                       (:special-form
+                        ;; TODO use SPECIAL-OPERATOR-P when possible?
+                        `(when ,(make-compound-form-test 'symbol)
+                           (let ((,(first body) (find-special-operator-info
+                                                 (first ,form-var))))
+                             (when ,(first body)
+                               ,@(make-body (rest body))))))
+                       ;; CLHS 3.1.2.1.2.4 Lambda Forms
+                       (:lambda-application
+                        `(when ,(make-compound-form-test '(cons (eql lambda)))
+                           ,@(make-body body)))
+                       ;; CLHS 3.1.2.1.2.2 Macro Forms
+                       ;; CLHS 3.1.2.1.2.3 Function Forms
+                       (:named-application
+                        `(when ,(make-compound-form-test 'symbol)
+                           ,@(make-body body)))
+                       ((t otherwise)
+                        `(progn ,@body)))))))
         `(let ((,form-var ,form))
            (block nil
              ,@(mapcar #'process-clause clauses)))))))
