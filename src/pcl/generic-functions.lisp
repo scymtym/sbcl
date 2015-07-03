@@ -381,6 +381,27 @@
     (proto-generic-function proto-method lambda-expression lambda-list
      environment))
 
+;;;; 6 arguments
+
+(defgeneric make-method-lambda-using-specializers
+    (proto-generic-function proto-method qualifiers specializers
+     method-lambda environment)
+  #+sb-doc
+  (:documentation
+   "Compute a method lambda form based on METHOD-LAMBDA, possibly
+taking into account PROTO-GENERIC-FUNCTION, PROTO-METHOD, QUALIFIERS,
+SPECIALIZERS and ENVIRONMENT.
+
+Both PROTO-GENERIC-FUNCTION and PROTO-METHOD may be
+uninitialized. However their classes and prototypes can be inspected.
+
+SPECIALIZERS is a list of specializer objects (i.e. parsed).
+
+Return three values:
+1. the method lambda
+2. initargs for the method instance
+3. a (possibly modified) method lambda-list or nil"))
+
 ;;;; optional arguments
 
 (defgeneric get-method (generic-function
