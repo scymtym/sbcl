@@ -55,6 +55,27 @@
 ;;;;
 ;;;; This is documented in the CLOS specification.
 
+(define-condition class-name-condition (condition)
+  ((name :initarg :name
+         :reader  class-name-condition-name))
+  (:default-initargs
+   :name (missing-arg)))
+
+(define-condition class-not-found-error (error
+                                         class-name-condition)
+  ((name :type (satisfies legal-class-name-p)))
+  (:report (lambda (condition stream)
+             (format stream "There is no class named ~
+                             ~/sb-impl:print-symbol-with-prefix/."
+                     (class-name-condition-name condition)))))
+
+(define-condition illegal-class-name-error (error
+                                            class-name-condition)
+  ()
+  (:report (lambda (condition stream)
+             (format stream "~S is not a legal class name."
+                     (class-name-condition-name condition)))))
+
 (declaim (inline legal-class-name-p))
 (defun legal-class-name-p (x)
   (symbolp x))
@@ -73,10 +94,9 @@
                   (ensure-non-standard-class symbol classoid))))))
       (cond ((null errorp) nil)
             ((legal-class-name-p symbol)
-             (error "There is no class named ~
-                     ~/sb-impl::print-symbol-with-prefix/." symbol))
+             (error 'class-not-found-error :name symbol))
             (t
-             (error "~S is not a legal class name." symbol)))))
+             (error 'illegal-class-name-error :name symbol)))))
 
 (defun find-class (symbol &optional (errorp t) environment)
   (declare (ignore environment) (explicit-check))
