@@ -304,7 +304,7 @@ TODO explain"
                               (error 'invalid-component-error
                                      :info      info
                                      :component name)))
-                        (recurse/component (function form component)
+                        (recurse/component (function form component &optional index)
                           (declare (type operator-component component))
                           (aver (operator-component-evaluated component))
                           (let ((*variable-access*
@@ -313,19 +313,25 @@ TODO explain"
                                      (operator-access-component-access component))))
                             (ecase (operator-component-cardinality component)
                               ((? 1)
+                               (assert (not index))
                                (rec/restart function form))
                               ((t)
-                               (dx-flet ((one-form (form)
-                                           (rec/restart function form)))
-                                 (map result-type #'one-form form))))))
+                               (if index
+                                   (rec/restart function (nth index form))
+                                   (dx-flet ((one-form (form)
+                                               (rec/restart function form)))
+                                     (map result-type #'one-form form)))))))
                         (recurse/application-like (&key
                                                    (components components)
                                                    (function function))
                           (loop :for (name form) :on components :by #'cddr
-                             :for info = (find-info name)
+                             :for (name* index) = (etypecase name
+                                                   (keyword (list name nil))
+                                                   ((cons keyword integer) (list (car name) (cdr name))))
+                             :for info = (find-info name*)
                              :when (operator-component-evaluated info)
-                             :collect name
-                             :and :collect (recurse/component function form info))))
+                             :collect name*
+                             :and :collect (recurse/component function form info index))))
                  (apply function
                         (make-instead function form) #'recurse/application-like
                         form info name components)))
@@ -416,16 +422,16 @@ TODO explain"
                  ;; Special operator => use the associated parser and
                  ;; info.
                  (:special-form info
-                  (let ((name (special-operator-info-name info)))
-                    (with-parsed-special-operator (form name &rest components) ; TODO add hyperspec reference if parse fails
-                      (apply #'process-application-like/maybe-setq
-                             function form info name components))))
+                                (let ((name (special-operator-info-name info)))
+                                  (with-parsed-special-operator (form name &rest components) ; TODO add hyperspec reference if parse fails
+                                    (apply #'process-application-like/maybe-setq
+                                           function form info name components))))
 
                  ;; ((lambda ...) ...) => application with lambda-list
                  ;; and body as extra information.
                  (:lambda-application
                   (with-parsed-special-operator (`(function ,(first form)) 'function
-                                                 &rest components)
+                                                  &rest components)
                     (apply #'process-application-like
                            function form +lambda-application+ 'lambda
                            :arguments (rest form)
@@ -654,7 +660,7 @@ and COMPONENTS* respectively."
          (kind (info :function :kind name)))
     (ecase kind
       (:function
-       (values :application :global (list :definition (find-free-fun name "shouldn't happen! (no-cmacro)")))) ; TODO
+       (values :application :global (list :definition :disalbed #+no (find-free-fun name "shouldn't happen! (no-cmacro)")))) ; TODO
       (:macro
        (let ((expander (info :function :macro-function name)))
          (values kind :global (list :expander expander))))
