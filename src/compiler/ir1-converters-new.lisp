@@ -44,7 +44,6 @@
                                   (next-var 'unused-next)
                                   (result-var 'unused-result))
                                  &body body)
-  ;; Compile-time checks.
   (let* ((info       (find-special-operator-info-or-lose name))
          (components (special-operator-info-components info)))
     (dolist (component component-vars)
@@ -57,12 +56,12 @@
   ;; Expansion.
   (binding* ((converter-name (symbolicate "IR1-CONVERT-" name "-TODO-REMOVE-THIS"))
              ((body-forms body-declarations documentation)
-              (parse-body body)))
+              (parse-body body t)))
     (with-unique-names (whole-var n-env)
       `(progn
          #+TODO-LATER (declaim (ftype (function (function function ctran ctran (or lvar null) t &key)
-                                   (values))
-                         ,converter-name))
+                                                (values))
+                                      ,converter-name))
          (defun ,converter-name (,instead-var ,recurse-var
                                  ,start-var ,next-var ,result-var
                                  ,whole-var &key ,@component-vars
@@ -75,10 +74,10 @@
            (print (list :enter ',name))
            (dx-flet (,@(when instead-var
                          `((,instead-var (&rest args)
-                             (apply ,instead-var args))))
-                     ,@(when recurse-var
-                         `((,recurse-var (&rest args)
-                             (apply ,recurse-var args)))))
+                                         (apply ,instead-var args))))
+                       ,@(when recurse-var
+                           `((,recurse-var (&rest args)
+                                           (apply ,recurse-var args)))))
              ,@body-forms)
            (print (list :leave ',name))
            (values))

@@ -180,7 +180,7 @@
       ((atom (setq place (macroexpand-for-setf place env)))
        (return-from setf `(setq ,place ,value-form)))
 
-      (let ((fun (car place)))
+      ((let ((fun (car place)))
         (when (and (symbolp fun)
                    ;; Local definition of FUN precludes global knowledge.
                    (not (sb!c::fun-locally-defined-p fun env)))
@@ -193,7 +193,7 @@
           (awhen (transformable-struct-setf-p place env)
             (return-from setf
               (slot-access-transform
-               :setf (list (cadr place) value-form) it)))))
+               :setf (list (cadr place) value-form) it))))))
 
       (t
        (multiple-value-bind (temps vals newval setter)

@@ -19,14 +19,14 @@
 (setf (fdefinition 'special-operator-p/old)
       (fdefinition 'special-operator-p))
 
+(defun special-operator-p/new (symbol)
+  (declare (symbol symbol))
+  (find-special-operator-info symbol))
+
 (defun special-operator-p (symbol)
   (ecase *walk-mode*
     (:old (special-operator-p/old symbol))
     (:new (special-operator-p/new symbol))))
-
-(defun special-operator-p/new (symbol)
-  (declare (symbol symbol))
-  (find-special-operator-info symbol))
 
 ;;;; IR1-CONVERT
 
