@@ -618,6 +618,7 @@
                   form components)))
         (named-application-info
          ;; TODO "no function named DECLARE" ; see IR1-CONVERT-GLOBAL-FUNCTOID
+         ;; TODO (check-deprecated-thing 'function op)
          (ecase (getf components :where)
            (:global
             (let ((function (find-free-fun name "shouldn't happen! (no-cmacro)")))
@@ -796,14 +797,18 @@
                 #+sb-xc-host
                 (warn "reading an ignored variable: ~S" name)))
              (t
-              (multiple-value-bind (state since replacements)
-                  (check-deprecated-variable name)
-                (when (eq state :final)
-                  (funcall instead start next result
-                           :form `(deprecation-error ,since ',name '(,@replacements)))
-                  (return-from ir1-convert-var/new (values))))))
+              ;; This case signals {EARLY,LATE}-DEPRECATION-WARNING
+              ;; for CONSTANT nodes in :EARLY and :LATE deprecation
+              ;; (constants in :FINAL deprecation are represented as
+              ;; symbol-macros).
+              (avaer (memq (check-deprecated-thing 'variable name)
+                           '(nil :early :late)))))
            (reference-leaf start next result var name))
           ((cons (eql macro)) ; symbol-macro
+           ;; This case signals {EARLY,LATE,FINAL}-DEPRECATION-WARNING
+           ;; for symbol-macros. Includes variables, constants,
+           ;; etc. in :FINAL deprecation.
+           (check-deprecated-thing 'variable name)
            ;; FIXME: [Free] type declarations. -- APD, 2002-01-26
            (funcall instead start next result :form (cdr var)))
           (heap-alien-info
