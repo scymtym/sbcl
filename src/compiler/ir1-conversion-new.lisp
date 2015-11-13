@@ -647,7 +647,10 @@
         ))))
 
 (defun back-to-ir1-convert (instead-or-recurse) ; TODO will destroy hook processing. maybe *current-ir1-converter-walk-function*?
-  (lambda (start next result &rest args &key (function (add-hook-processing #'ir1-convert-walk-function)) &allow-other-keys)
+  (lambda (start next result &rest args
+           &key
+           (function (add-hook-processing #'ir1-convert-walk-function))
+           &allow-other-keys)
     (apply instead-or-recurse start next result :function function args)))
 
 #+TODO(declaim (ftype (sfunction (ctran ctran (or lvar null) t)
@@ -687,6 +690,7 @@
   (defun ir1-convert/new (start next result form)
     (ir1-error-bailout (start next result form)
       (let ((*stuff* (list start next result)))
+        ;; Hook processing is added by WALK-FORMS-FOR-IR1-CONVERSION.
         (walk-forms-for-ir1-conversion #'ir1-convert-walk-function form))))
 
   ;; Generate a reference to a manifest constant, creating a new leaf

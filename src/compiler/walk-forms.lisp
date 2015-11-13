@@ -987,8 +987,7 @@ could be attached anywhere else as well). This hooks does two things:
               (funcall instead :form re-wrapped)))
            (t
             ;; Delegate to original FUNCTION.
-            (apply function instead recurse
-                   form kind name components)))))
+            (apply function instead recurse form kind name components)))))
     #'hook-processing))
 
 (declaim (type function *reconstitute*))
