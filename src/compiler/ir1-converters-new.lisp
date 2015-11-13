@@ -411,8 +411,10 @@
   ;; extra cast inserted for them.
 
   ;; TODO need a helper that only macroexpands
-  (let* ((function (recurse start next result :components (list :function function))) ; TODO probably wrong
+  (let* ((function function #+not-until-this-does-only-macro-expansion (recurse start next result :components (list :function function))) ; TODO probably wrong
          (op (when (consp function) (car function))))
+    (let ((sb-c::*walk-mode* :old))
+      (print (list '%funcall :expanded-function op)))
     (case op
       (function
        (let ((thing (cdr function))) ; TODO shape of FUNCTION

@@ -622,6 +622,10 @@
          (ecase (getf components :where)
            (:global
             (let ((function (find-free-fun name "shouldn't happen! (no-cmacro)")))
+              (let ((*walk-mode* :old))
+                (print (list 'ir1-convert-walk-function
+                             :where (getf components :where)
+                             :function function)))
               (ir1-convert-srctran/new
                start next result instead1 recurse function form)))
            (:lexical
@@ -801,8 +805,8 @@
               ;; for CONSTANT nodes in :EARLY and :LATE deprecation
               ;; (constants in :FINAL deprecation are represented as
               ;; symbol-macros).
-              (avaer (memq (check-deprecated-thing 'variable name)
-                           '(nil :early :late)))))
+              (aver (memq (check-deprecated-thing 'variable name)
+                          '(nil :early :late)))))
            (reference-leaf start next result var name))
           ((cons (eql macro)) ; symbol-macro
            ;; This case signals {EARLY,LATE,FINAL}-DEPRECATION-WARNING
@@ -1023,7 +1027,8 @@
 ;;; Convert a function call where the function FUN is a LEAF. FORM is
 ;;; the source for the call. We return the COMBINATION node so that
 ;;; the caller can poke at it if it wants to.
-(declaim (ftype (sfunction (ctran ctran (or lvar null) function function leaf list) combination)
+(declaim (ftype (sfunction (ctran ctran (or lvar null) function function leaf list)
+                           combination)
                 ir1-convert-combination/new))
 (defun ir1-convert-combination/new (start next result instead recurse
                                     function arguments)
@@ -1038,7 +1043,8 @@
 ;;; node. FUN-LVAR yields the function to call. ARGUMENTS is the list
 ;;; of argument forms for the call (i.e. the CDR of the form). We
 ;;; return the COMBINATION node.
-(declaim (ftype (sfunction (ctran ctran (or lvar null) function function lvar list) combination)
+(declaim (ftype (sfunction (ctran ctran (or lvar null) function function lvar list)
+                           combination)
                 ir1-convert-combination-args/new))
 (defun ir1-convert-combination-args/new (start next result instead recurse
                                          fun-lvar arguments)
@@ -1064,7 +1070,8 @@
 ;;; expansion, but is :INLINE, then give an efficiency note (unless a
 ;;; known function which will quite possibly be open-coded.) Next, we
 ;;; go to ok-combination conversion.
-(declaim (ftype (sfunction (ctran ctran (or lvar null) function function leaf list) combination)
+(declaim (ftype (function (ctran ctran (or lvar null) function function leaf list)
+                          (values &optional t) #+TODO-maybe combination)
                 ir1-convert-srctran/new))
 (defun ir1-convert-srctran/new (start next result instead recurse var form)
   (let ((inlinep (when (defined-fun-p var)
@@ -1088,15 +1095,19 @@
                                   (if (consp name) :write :read)
                                   (cdr form) transform))))
                         (values result (null result))))
+                (let ((*walk-mode* :old))
+                  (print (list 'ir1-convert-srctran/new
+                               :transformed transformed
+                               :pass pass)))
                 (cond (pass
                        (ir1-convert-maybe-predicate/new
-                        start next result instead recurse form var))
+                        start next result instead recurse var form))
                       (t
                        (unless (policy *lexenv* (zerop store-xref-data))
                          (record-call name (ctran-block start) *current-path*))
                        (funcall instead start next result :form transformed))))
               (ir1-convert-maybe-predicate/new
-               start next result instead recurse form var))))))
+               start next result instead recurse var form)))))) ; TODO reverse form/var
 
 ;;; If the function has the PREDICATE attribute, and the RESULT's DEST
 ;;; isn't an IF, then we convert (IF <form> T NIL), ensuring that a
@@ -1104,19 +1115,18 @@
 ;;;
 ;;; If the function isn't a predicate, then we call
 ;;; IR1-CONVERT-COMBINATION-CHECKING-TYPE.
+(declaim (ftype (function (ctran ctran (or lvar null) function function global-var list)
+                          (values &optional t) #+TODO-maybe combination)
+                ir1-convert-maybe-predicate/new))
 (defun ir1-convert-maybe-predicate/new (start next result instead recurse
-                                        form var)
-  (declare (type ctran start next)
-           (type (or lvar null) result)
-           (list form)
-           (type global-var var))
+                                        var form)
   (let ((info (info :function :info (leaf-source-name var))))
     (if (and info
              (ir1-attributep (fun-info-attributes info) predicate)
              (not (if-p (and result (lvar-dest result)))))
         (funcall instead start next result :form `(if ,form t nil))
         (ir1-convert-combination-checking-type/new
-         start next result instead recurse form var))))
+         start next result instead recurse var (rest form)))))
 
 ;;; Actually really convert a global function call that we are allowed
 ;;; to early-bind.
@@ -1132,12 +1142,13 @@
 ;;; function type to the arg and result lvars. We do this now so that
 ;;; IR1 optimize doesn't have to redundantly do the check later so
 ;;; that it can do the type propagation.
-(declaim (ftype (function (ctran ctran (or null lvar) function function list leaf) (values &optional))
+(declaim (ftype (function (ctran ctran (or null lvar) function function leaf list)
+                          (values &optional))
                 ir1-convert-combination-checking-type/new))
 (defun ir1-convert-combination-checking-type/new
-    (start next result instead recurse form var)
+    (start next result instead recurse var arguments)
   (let* ((node (ir1-convert-combination/new
-                start next result instead recurse var form))
+                start next result instead recurse var arguments))
          (fun-lvar (basic-combination-fun node))
          (type (leaf-type var)))
     (when (validate-call-type node type var t)
