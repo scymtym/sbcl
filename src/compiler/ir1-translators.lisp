@@ -512,6 +512,8 @@ Return VALUE without evaluating it."
     ((lambda-with-lexenv)
      ;; FIXME: Get the original DEFUN name here.
      `(lambda ,(fifth thing)))
+    ((%wrapper %post-macro-wrapper)
+     (name-lambdalike (third thing)))
     (otherwise
      (compiler-error "Not a valid lambda expression:~%  ~S"
                      thing))))

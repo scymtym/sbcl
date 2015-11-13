@@ -1026,7 +1026,8 @@
 (defun ir1-convert-lambdalike/new (instead recurse thing
                                    &key
                                    (source-name '.anonymous.)
-                                   debug-name)
+                                     debug-name)
+  (declare (ignore instead))
   (when (and (not debug-name) (eq '.anonymous. source-name))
     (setf debug-name (name-lambdalike thing)))
   (flet ((convert (form &rest args
@@ -1034,14 +1035,26 @@
                    #+no (source-name source-name)
                    #+no (debug-name debug-name)
                    #+no debug-catch)
-           (with-parsed-special-operator (`(function ,form) 'function
+           #+maybe (apply recurse (append *stuff* (list :form form)))
+           #+no (with-parsed-special-operator (`(function ,form) 'function
                                           &key lambda-list declarations documentation body)
              (apply #'ir1-convert-lambda/new
                     instead recurse thing lambda-list declarations documentation body
                     args
                     #+no (:maybe-add-debug-catch debug-catch
                           :source-name source-name
-                          :debug-name debug-name)))))
+                          :debug-name debug-name)))
+           (assert (eq form thing))
+           (funcall recurse
+                    :function (lambda (instead recurse form kind name &key lambda-list declarations documentation body)
+                                (declare (ignore kind name))
+                                (break (princ-to-string recurse))
+                                (apply #'ir1-convert-lambda/new
+                                       instead recurse (second form) lambda-list declarations documentation body
+                                       args
+                                       #+no (:maybe-add-debug-catch debug-catch
+                                                                    :source-name source-name
+                                                                    :debug-name debug-name))))))
    (ecase (car thing) ; TODO do this properly
      ((lambda)
       (convert thing :maybe-add-debug-catch t :source-name source-name :debug-name debug-name))

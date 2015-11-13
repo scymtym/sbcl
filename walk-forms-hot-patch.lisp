@@ -73,8 +73,10 @@
     (let* ((fun (walk-forms-for-ir1-conversion
                  (lambda (instead recurse form info &rest args)
                    (declare (ignore info args))
-                   ; TODO (aver (typep info '))
-                   (with-node-arguments (make-functional-from-toplevel-lambda instead recurse)
+                   ;; TODO (aver (typep info '))
+                   (ir1-convert-lambdalike/new
+                    instead recurse form :source-name source-name)
+                   #+no (with-node-arguments (make-functional-from-toplevel-lambda instead recurse)
                      (ir1-convert-lambdalike/new
                       (back-to-ir1-convert instead)
                       (back-to-ir1-convert recurse)
