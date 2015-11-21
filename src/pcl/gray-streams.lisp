@@ -11,27 +11,13 @@
 
 (in-package "SB-IMPL")
 
-;;; BUG-OR-ERROR: because we have extensible streams, wherewith the
-;;; user is responsible for some of the protocol implementation, it's
-;;; not necessarily a bug in SBCL itself if we fall through to one of
-;;; these default methods.
-;;;
-;;; FIXME: there's a lot of similarity in these Gray stream
-;;; implementation generic functions.  All of them could (maybe
-;;; should?) have two default methods: one on STREAM calling
-;;; BUG-OR-ERROR, and one on T signalling a TYPE-ERROR.
-(defmacro bug-or-error (stream fun)
-  `(error
-    "~@<The stream ~S has no suitable method for ~S, ~
-     and so has fallen through to this method.  If you think that this is ~
-     a bug, please report it to the applicable authority (bugs in SBCL itself ~
-     should go to the mailing lists referenced from ~
-     <http://www.sbcl.org/>).~@:>"
-    ,stream ,fun))
 
 (fmakunbound 'stream-element-type)
 
-(defgeneric stream-element-type (stream)
+(defclass my-stream (standard-object stream) ())
+(stream-element-type (make-instance 'my-stream))
+
+(define-protocol-generic stream-element-type ((stream stream))
   #+sb-doc
   (:documentation
    "Return a type specifier for the kind of object returned by the
@@ -44,13 +30,8 @@
 (defmethod stream-element-type ((stream sb-gray:fundamental-character-stream))
   'character)
 
-(defmethod stream-element-type ((stream stream))
-  (bug-or-error stream 'stream-element-type))
-
-(defmethod stream-element-type ((non-stream t))
-  (error 'type-error :datum non-stream :expected-type 'stream))
 
-(defgeneric sb-gray::pcl-open-stream-p (stream)
+(define-protocol-generic sb-gray::pcl-open-stream-p ((stream stream))
   #+sb-doc
   (:documentation
    "Return true if STREAM is not closed. A default method is provided
@@ -63,17 +44,11 @@
 (defmethod sb-gray::pcl-open-stream-p ((stream fundamental-stream))
   (sb-gray::stream-open-p stream))
 
-(defmethod sb-gray::pcl-open-stream-p ((stream stream))
-  (bug-or-error stream 'open-stream-p))
-
-(defmethod sb-gray::pcl-open-stream-p ((non-stream t))
-  (error 'type-error :datum non-stream :expected-type 'stream))
-
 ;;; bootstrapping hack
 (sb-gray::pcl-open-stream-p (make-string-output-stream))
 (setf (fdefinition 'open-stream-p) #'sb-gray::pcl-open-stream-p)
 
-(defgeneric sb-gray::pcl-close (stream &key abort)
+(define-protocol-generic sb-gray::pcl-close ((stream stream) &key abort)
   #+sb-doc
   (:documentation
    "Close the given STREAM. No more I/O may be performed, but
@@ -99,7 +74,7 @@
 (let ()
   (fmakunbound 'input-stream-p)
 
-  (defgeneric input-stream-p (stream)
+  (define-protocol-generic input-stream-p ((stream stream))
     #+sb-doc
     (:documentation "Can STREAM perform input operations?"))
 
@@ -110,18 +85,12 @@
     nil)
 
   (defmethod input-stream-p ((stream sb-gray:fundamental-input-stream))
-    t)
-
-  (defmethod input-stream-p ((stream stream))
-    (bug-or-error stream 'input-stream-p))
-
-  (defmethod input-stream-p ((non-stream t))
-    (error 'type-error :datum non-stream :expected-type 'stream)))
+    t))
 
 (let ()
   (fmakunbound 'interactive-stream-p)
 
-  (defgeneric interactive-stream-p (stream)
+  (define-protocol-generic interactive-stream-p ((stream stream))
     #+sb-doc
     (:documentation "Is STREAM an interactive stream?"))
 
@@ -129,18 +98,12 @@
     (funcall (ansi-stream-misc stream) stream :interactive-p))
 
   (defmethod interactive-stream-p ((stream sb-gray:fundamental-stream))
-    nil)
-
-  (defmethod interactive-stream-p ((stream stream))
-    (bug-or-error stream 'interactive-stream-p))
-
-  (defmethod interactive-stream-p ((non-stream t))
-    (error 'type-error :datum non-stream :expected-type 'stream)))
+    nil))
 
 (let ()
   (fmakunbound 'output-stream-p)
 
-  (defgeneric output-stream-p (stream)
+  (define-protocol-generic output-stream-p ((stream stream))
     #+sb-doc
     (:documentation "Can STREAM perform output operations?"))
 
@@ -151,13 +114,7 @@
     nil)
 
   (defmethod output-stream-p ((stream sb-gray:fundamental-output-stream))
-    t)
-
-  (defmethod output-stream-p ((stream stream))
-    (bug-or-error stream 'output-stream-p))
-
-  (defmethod output-stream-p ((non-stream t))
-    (error 'type-error :datum non-stream :expected-type 'stream)))
+    t))
 
 ;;; character input streams
 ;;;
@@ -165,7 +122,7 @@
 ;;; includes FUNDAMENTAL-CHARACTER-INPUT-STREAM and defining methods
 ;;; for the generic functions below.
 
-(defgeneric sb-gray:stream-read-char (stream)
+(define-protocol-generic sb-gray:stream-read-char ((stream stream))
   #+sb-doc
   (:documentation
    "Read one character from the stream. Return either a
@@ -173,14 +130,14 @@
   Every subclass of FUNDAMENTAL-CHARACTER-INPUT-STREAM must define a
   method for this function."))
 
-(defgeneric sb-gray:stream-unread-char (stream character)
+(define-protocol-generic sb-gray:stream-unread-char ((stream stream) character)
   #+sb-doc
   (:documentation
    "Undo the last call to STREAM-READ-CHAR, as in UNREAD-CHAR.
   Return NIL. Every subclass of FUNDAMENTAL-CHARACTER-INPUT-STREAM
   must define a method for this function."))
 
-(defgeneric sb-gray:stream-read-char-no-hang (stream)
+(define-protocol-generic sb-gray:stream-read-char-no-hang ((stream stream))
   #+sb-doc
   (:documentation
    "This is used to implement READ-CHAR-NO-HANG. It returns either a
@@ -193,7 +150,7 @@
 (defmethod sb-gray:stream-read-char-no-hang ((stream sb-gray:fundamental-character-input-stream))
   (sb-gray:stream-read-char stream))
 
-(defgeneric sb-gray:stream-peek-char (stream)
+(define-protocol-generic sb-gray:stream-peek-char ((stream stream))
   #+sb-doc
   (:documentation
    "This is used to implement PEEK-CHAR; this corresponds to PEEK-TYPE of NIL.
@@ -206,7 +163,7 @@
       (sb-gray:stream-unread-char stream char))
     char))
 
-(defgeneric sb-gray:stream-listen (stream)
+(define-protocol-generic sb-gray:stream-listen ((stream stream))
   #+sb-doc
   (:documentation
    "This is used by LISTEN. It returns true or false. The default method uses
@@ -220,7 +177,7 @@
       (sb-gray:stream-unread-char stream char)
       t)))
 
-(defgeneric sb-gray:stream-read-line (stream)
+(define-protocol-generic sb-gray:stream-read-line ((stream stream))
   #+sb-doc
   (:documentation
    "This is used by READ-LINE. A string is returned as the first value. The
@@ -247,7 +204,7 @@
               (setf (schar res index) ch)
               (incf index)))))))
 
-(defgeneric sb-gray:stream-clear-input (stream)
+(define-protocol-generic sb-gray:stream-clear-input ((stream stream))
   #+sb-doc
   (:documentation
    "This is like CL:CLEAR-INPUT, but for Gray streams, returning NIL.
@@ -255,19 +212,16 @@
 
 (defmethod sb-gray:stream-clear-input ((stream sb-gray:fundamental-character-input-stream))
   nil)
-(defmethod sb-gray:stream-clear-input ((stream stream))
-  (bug-or-error stream 'stream-clear-input))
-(defmethod sb-gray:stream-clear-input ((non-stream t))
-  (error 'type-error :datum non-stream :expected-type 'stream))
 
-(defgeneric stream-read-sequence (stream seq &optional start end)
+(define-protocol-generic sb-gray:stream-read-sequence
+    ((stream stream) seq &optional start end)
   #+sb-doc
   (:documentation
    "This is like CL:READ-SEQUENCE, but for Gray streams."))
 
-(defmethod sb-gray:stream-read-sequence ((stream sb-gray:fundamental-character-input-stream)
-                                 (seq sequence)
-                                 &optional (start 0) (end nil))
+(defmethod sb-gray:stream-read-sequence
+    ((stream sb-gray:fundamental-character-input-stream) (seq sequence)
+     &optional (start 0) (end nil))
   (read-sequence/read-function
    seq stream start end 'character
    (lambda (stream eof-error-p eof-value recursive-p)
@@ -277,9 +231,9 @@
      (sb-gray:stream-read-char stream))
    #'ill-bin))
 
-(defmethod sb-gray:stream-read-sequence ((stream sb-gray:fundamental-binary-input-stream)
-                                 (seq sequence)
-                                 &optional (start 0) (end nil))
+(defmethod sb-gray:stream-read-sequence
+    ((stream sb-gray:fundamental-binary-input-stream) (seq sequence)
+     &optional (start 0) (end nil))
   (let ((stream-element-mode (stream-element-type-stream-element-mode
                               (stream-element-type stream))))
     (read-sequence/read-function
@@ -298,14 +252,14 @@
 ;;; includes FUNDAMENTAL-CHARACTER-OUTPUT-STREAM and defining methods
 ;;; for the generic functions below.
 
-(defgeneric sb-gray:stream-write-char (stream character)
+(define-protocol-generic sb-gray:stream-write-char ((stream stream) character)
   #+sb-doc
   (:documentation
    "Write CHARACTER to STREAM and return CHARACTER. Every
   subclass of FUNDAMENTAL-CHARACTER-OUTPUT-STREAM must have a method
   defined for this function."))
 
-(defgeneric sb-gray:stream-line-column (stream)
+(define-protocol-generic sb-gray:stream-line-column ((stream stream))
   (:method ((stream sb-int:form-tracking-stream))
     (cdr (sb-int:line/col-from-charpos stream)))
   #+sb-doc
@@ -323,14 +277,14 @@
 
 ;;; STREAM-LINE-LENGTH is a CMU CL extension to Gray streams.
 ;;; FIXME: Should we support it? Probably not..
-(defgeneric sb-gray:stream-line-length (stream)
+(define-protocol-generic sb-gray:stream-line-length ((stream stream))
   #+sb-doc
   (:documentation "Return the stream line length or NIL."))
 
 (defmethod sb-gray:stream-line-length ((stream sb-gray:fundamental-character-output-stream))
   nil)
 
-(defgeneric sb-gray:stream-start-line-p (stream)
+(define-protocol-generic sb-gray:stream-start-line-p ((stream stream))
   #+sb-doc
   (:documentation
    "Is STREAM known to be positioned at the beginning of a line?
@@ -349,7 +303,8 @@
 (defmethod sb-gray:stream-start-line-p ((stream sb-gray:fundamental-character-output-stream))
   (eql (sb-gray:stream-line-column stream) 0))
 
-(defgeneric sb-gray:stream-write-string (stream string &optional start end)
+(define-protocol-generic sb-gray:stream-write-string ((stream stream) string
+                                                      &optional start end)
   #+sb-doc
   (:documentation
    "This is used by WRITE-STRING. It writes the string to the stream,
@@ -366,7 +321,7 @@
      (data simple-string) stream offset-start offset-end #'stream-write-char))
   string)
 
-(defgeneric sb-gray:stream-terpri (stream)
+(define-protocol-generic sb-gray:stream-terpri ((stream stream))
   #+sb-doc
   (:documentation
    "Writes an end of line, as for TERPRI. Returns NIL. The default
@@ -375,7 +330,7 @@
 (defmethod sb-gray:stream-terpri ((stream sb-gray:fundamental-character-output-stream))
   (sb-gray:stream-write-char stream #\Newline))
 
-(defgeneric sb-gray:stream-fresh-line (stream)
+(define-protocol-generic sb-gray:stream-fresh-line ((stream stream))
   #+sb-doc
   (:documentation
    "Outputs a new line to the Stream if it is not positioned at the
@@ -388,47 +343,32 @@
     (sb-gray:stream-terpri stream)
     t))
 
-(defgeneric sb-gray:stream-finish-output (stream)
+(define-protocol-generic sb-gray:stream-finish-output ((stream stream))
+  (:method ((stream sb-gray:fundamental-output-stream))
+    nil)
   #+sb-doc
   (:documentation
    "Attempts to ensure that all output sent to the Stream has reached
   its destination, and only then returns false. Implements
   FINISH-OUTPUT. The default method does nothing."))
 
-(defmethod sb-gray:stream-finish-output ((stream sb-gray:fundamental-output-stream))
-  nil)
-(defmethod sb-gray:stream-finish-output ((stream stream))
-  (bug-or-error stream 'stream-finish-output))
-(defmethod sb-gray:stream-finish-output ((non-stream t))
-  (error 'type-error :datum non-stream :expected-type 'stream))
-
-(defgeneric sb-gray:stream-force-output (stream)
+(define-protocol-generic sb-gray:stream-force-output ((stream stream))
+  (:method ((stream sb-gray:fundamental-output-stream))
+    nil)
   #+sb-doc
   (:documentation
    "Attempts to force any buffered output to be sent. Implements
   FORCE-OUTPUT. The default method does nothing."))
 
-(defmethod sb-gray:stream-force-output ((stream sb-gray:fundamental-output-stream))
-  nil)
-(defmethod sb-gray:stream-force-output ((stream stream))
-  (bug-or-error stream 'stream-force-output))
-(defmethod sb-gray:stream-force-output ((non-stream t))
-  (error 'type-error :datum non-stream :expected-type 'stream))
-
-(defgeneric sb-gray:stream-clear-output (stream)
+(define-protocol-generic sb-gray:stream-clear-output ((stream stream))
+  (:method ((stream sb-gray:fundamental-output-stream))
+    nil)
   #+sb-doc
   (:documentation
    "This is like CL:CLEAR-OUTPUT, but for Gray streams: clear the given
   output STREAM. The default method does nothing."))
 
-(defmethod sb-gray:stream-clear-output ((stream sb-gray:fundamental-output-stream))
-  nil)
-(defmethod sb-gray:stream-clear-output ((stream stream))
-  (bug-or-error stream 'stream-clear-output))
-(defmethod sb-gray:stream-clear-output ((non-stream t))
-  (error 'type-error :datum non-stream :expected-type 'stream))
-
-(defgeneric sb-gray:stream-advance-to-column (stream column)
+(define-protocol-generic sb-gray:stream-advance-to-column ((stream stream) column)
   #+sb-doc
   (:documentation
    "Write enough blank space so that the next character will be
@@ -439,7 +379,7 @@
   #\SPACE character; it returns NIL if STREAM-LINE-COLUMN returns NIL."))
 
 (defmethod sb-gray:stream-advance-to-column ((stream sb-gray:fundamental-character-output-stream)
-                                     column)
+                                             column)
   (let ((current-column (sb-gray:stream-line-column stream)))
     (when current-column
       (let ((fill (- column current-column)))
@@ -447,7 +387,8 @@
           (sb-gray:stream-write-char stream #\Space)))
       T)))
 
-(defgeneric sb-gray:stream-write-sequence (stream seq &optional start end)
+(define-protocol-generic sb-gray:stream-write-sequence ((stream stream) seq
+                                                        &optional start end)
   #+sb-doc
   (:documentation
    "This is like CL:WRITE-SEQUENCE, but for Gray streams."))
@@ -479,29 +420,20 @@
 ;;; for STREAM-ELEMENT-TYPE and for one or both of the following
 ;;; generic functions.
 
-(defgeneric sb-gray:stream-read-byte (stream)
+(define-protocol-generic sb-gray:stream-read-byte ((stream stream))
   #+sb-doc
   (:documentation
    "Used by READ-BYTE; returns either an integer, or the symbol :EOF
   if the stream is at end-of-file."))
 
-(defmethod sb-gray:stream-read-byte ((stream stream))
-  (bug-or-error stream 'stream-read-byte))
-(defmethod sb-gray:stream-read-byte ((non-stream t))
-  (error 'type-error :datum non-stream :expected-type 'stream))
-
-(defgeneric sb-gray:stream-write-byte (stream integer)
+(define-protocol-generic sb-gray:stream-write-byte ((stream stream) integer)
   #+sb-doc
   (:documentation
    "Implements WRITE-BYTE; writes the integer to the stream and
   returns the integer as the result."))
 
-(defmethod sb-gray:stream-write-byte ((stream stream) integer)
-  (bug-or-error stream 'stream-write-byte))
-(defmethod sb-gray:stream-write-byte ((non-stream t) integer)
-  (error 'type-error :datum non-stream :expected-type 'stream))
-
-(defgeneric sb-gray:stream-file-position (stream &optional position-spec)
+(define-protocol-generic sb-gray:stream-file-position ((stream stream)
+                                                       &optional position-spec)
   #+sb-doc
   (:documentation
    "Used by FILE-POSITION. Returns or changes the current position within STREAM."))
