@@ -744,6 +744,11 @@ like *STACK-TOP-HINT* and unsupported stuff like *TRACED-FUN-LIST*."
                "NAME-CONFLICT-DATUM" "NAME-CONFLICT-SYMBOLS"
                "RESOLVE-CONFLICT"
 
+               ;; Protocol stuff
+               "PROTOCOL-UNIMPLEMENTED"
+               "PROTOCOL-UNIMPLEMENTED-PROTOCOL"
+               "PROTOCOL-UNIMPLEMENTED-OPERATION"
+
                ;; Deprecation stuff
                "DEPRECATED" ; declaration
                "DEPRECATION-CONDITION"
@@ -2558,7 +2563,7 @@ package is deprecated in favour of SB-MOP."
       :doc "semi-public: implements something which might eventually
 be submitted as a CDR"
       :use ()
-      :export ("PROTOCOL-UNIMPLEMENTED"
+      :export ("PROTOCOL-UNIMPLEMENTED" ; TODO
                "PROTOCOL-UNIMPLEMENTED-OPERATION"
 
                "DOSEQUENCE"

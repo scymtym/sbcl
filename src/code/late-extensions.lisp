@@ -600,3 +600,92 @@ lines and columns."
      `(,@(when content `((:line ,(line content))
                          (:column ,(column content position))))
        ,@(when position `((:file-position ,position)))))))
+
+;;;
+
+(defvar *protocol-references*
+  '((sequence . ((:sbcl :node "Extensible Sequences")))
+    (stream   . ((:sbcl :node "Gray Streams")))))
+
+(define-condition protocol-unimplemented (type-error
+                                          reference-condition)
+  ((operation :initarg :operation
+              :reader protocol-unimplemented-operation))
+  (:default-initargs
+   :operation (missing-arg))
+  (:report
+   (lambda (condition stream)
+     (let ((datum (type-error-datum condition))
+           (protocol (protocol-unimplemented-protocol condition))
+           (operation (protocol-unimplemented-operation condition)))
+       (format stream "~@<There is no suitable method on the ~A ~
+                       protocol generic function ~
+                       ~/sb-impl:print-symbol-with-prefix/ for ~
+                       ~/sb-impl:print-symbol-with-prefix/ which is an ~
+                       instance of the ~
+                       ~/sb-impl:print-symbol-with-prefix/ subclass ~
+                       ~/sb-impl:print-symbol-with-prefix/. ~
+                       ~@:_~@:_~
+                       If you think that this is a bug, please report ~
+                       it to the applicable authority (bugs in SBCL ~
+                       itself should go to the mailing lists ~
+                       referenced from <http://www.sbcl.org/>).~@:>"
+               protocol operation datum protocol (class-of datum)))))
+  #!+sb-doc
+  (:documentation
+   "This error is signaled if a protocol operation is applied to an
+    instance of a class supposedly conforming to the protocol that
+    actually does not support the operation."))
+
+(defun protocol-unimplemented-protocol (condition)
+  (type-error-expected-type condition))
+
+(defun protocol-unimplemented (class object operation)
+  (let ((references (cdr (assoc class *protocol-references*))))
+    (error 'protocol-unimplemented
+           :datum object
+           :expected-type class
+           :operation operation
+           :references references)))
+
+(defun protocol-type-error (class object)
+  (error 'type-error :datum object :expected-type class))
+
+(defmacro define-protocol-generic (name lambda-list &body options)
+  (binding* (((nil required optional rest key)
+              (parse-lambda-list lambda-list :context 'defmethod))
+             (specialized (remove-if-not #'consp required))
+             (class (second (first specialized)))
+             (object-args (mapcar #'first specialized))
+             (p-u-m (find :protocol-unimplemented-method options
+                          :key #'first))
+             ((p-u-m options) (if p-u-m
+                                  (values (second p-u-m)
+                                          (remove p-u-m options))
+                                  (values t options)))
+             (ignore `(,@optional
+                       ,@rest
+                       ,@(mapcar (lambda (spec)
+                                   (nth-value 1 (parse-key-arg-spec spec)))
+                                 key))))
+    (flet ((unspecialize-lambda-list ()
+             (mapcar (lambda (arg)
+                       (if (memq arg specialized)
+                           (first arg)
+                           arg))
+                     lambda-list))
+           (specialize-lambda-list (specialized object-arg class)
+             (substitute `(,object-arg ,class) specialized lambda-list)))
+      `(defgeneric ,name ,(unspecialize-lambda-list)
+         ,@(when p-u-m
+             (loop :for object-arg :in object-args
+                :for specialized :in specialized :collect
+                `(:method ,(specialize-lambda-list specialized object-arg class)
+                   ,@(when ignore `((declare (ignore ,@ignore))))
+                   (protocol-unimplemented ',class ,object-arg ',name))))
+         ,@(loop :for object-arg :in object-args
+              :for specialized :in specialized :collect
+              `(:method ,(specialize-lambda-list specialized object-arg t)
+                 ,@(when ignore `((declare (ignore ,@ignore))))
+                 (protocol-type-error ',class ,object-arg)))
+         ,@options))))
