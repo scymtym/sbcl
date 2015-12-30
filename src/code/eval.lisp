@@ -54,7 +54,7 @@
 
 ;;; Handle PROGN and implicit PROGN.
 (defun simple-eval-progn-body (progn-body lexenv)
-  (unless (list-with-length-p progn-body)
+  (unless (ignore-errors (list-length progn-body))
     (let ((*print-circle* t))
       (error 'simple-program-error
              :format-control

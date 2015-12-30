@@ -15,11 +15,6 @@
 
 (in-package "SB!IMPL")
 
-;;; Is X a list for which LENGTH is meaningful, i.e. a list which is
-;;; not improper and which is not circular?
-(defun list-with-length-p (x)
-  (values (ignore-errors (list-length x))))
-
 ;;; not used in 0.7.8, but possibly useful for defensive programming
 ;;; in e.g. (COERCE ... 'VECTOR)
 ;;;(defun list-length-or-die (x)
