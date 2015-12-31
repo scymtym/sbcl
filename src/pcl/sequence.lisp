@@ -9,73 +9,50 @@
 
 (in-package "SB-IMPL")
 
+(defun sequence-protocol-unimplemented-p (thing)
+  (and (typep thing 'protocol-unimplemented)
+       (eq 'sequence (protocol-unimplemented-protocol thing))))
+
+(deftype sequence:protocol-unimplemented ()
+  '(and protocol-unimplemented (satisfies sequence-protocol-unimplemented-p)))
+
+(defun sequence:protocol-unimplemented-operation (condition)
+  (protocol-unimplemented-operation condition))
+
 ;;;; basic protocol
-(define-condition sequence:protocol-unimplemented (type-error
-                                                   reference-condition)
-  ((operation :initarg :operation
-              :reader sequence:protocol-unimplemented-operation))
-  (:default-initargs
-   :operation (missing-arg)
-   :references '((:sbcl :node "Extensible Sequences")))
-  (:report
-   (lambda (condition stream)
-     (let ((operation (sequence::protocol-unimplemented-operation condition))
-           (datum (type-error-datum condition)))
-       (format stream "~@<The operation ~
-                       ~/sb-impl:print-symbol-with-prefix/ is not ~
-                       implemented for ~A which is an instance of the ~
-                       ~/sb-impl:print-symbol-with-prefix/ subclass ~
-                       ~S.~@:>"
-               operation datum 'sequence (class-of datum)))))
-  #+sb-doc
-  (:documentation
-   "This error is signaled if a sequence operation is applied to an
-   instance of a sequence class that does not support the
-   operation."))
 
-(defun sequence:protocol-unimplemented (operation sequence)
-  (error 'sequence:protocol-unimplemented
-         :datum sequence
-         :expected-type '(or list vector)
-         :operation operation))
-
-(defgeneric sequence:emptyp (sequence)
+(define-protocol-generic sequence:emptyp ((sequence sequence))
   (:method ((s list)) (null s))
   (:method ((s vector)) (zerop (length s)))
   (:method ((s sequence)) (zerop (length s)))
+  (:protocol-unimplemented-method nil)
   #+sb-doc
   (:documentation
    "Returns T if SEQUENCE is an empty sequence and NIL
    otherwise. Signals an error if SEQUENCE is not a sequence."))
 
-(defgeneric sequence:length (sequence)
+(define-protocol-generic sequence:length (sequence)
   (:method ((s list)) (length s))
   (:method ((s vector)) (length s))
-  (:method ((s sequence))
-    (sequence:protocol-unimplemented 'sequence:length s))
   #+sb-doc
   (:documentation
    "Returns the length of SEQUENCE or signals a PROTOCOL-UNIMPLEMENTED
    error if the sequence protocol is not implemented for the class of
    SEQUENCE."))
 
-(defgeneric sequence:elt (sequence index)
+(define-protocol-generic sequence:elt (sequence index)
   (:method ((s list) index) (elt s index))
   (:method ((s vector) index) (elt s index))
-  (:method ((s sequence) index)
-    (sequence:protocol-unimplemented 'sequence:elt s))
   #+sb-doc
   (:documentation
    "Returns the element at position INDEX of SEQUENCE or signals a
    PROTOCOL-UNIMPLEMENTED error if the sequence protocol is not
    implemented for the class of SEQUENCE."))
 
-(defgeneric (setf sequence:elt) (new-value sequence index)
+(define-protocol-generic (setf sequence:elt) (new-value sequence index)
   (:argument-precedence-order sequence new-value index)
   (:method (new-value (s list) index) (setf (elt s index) new-value))
   (:method (new-value (s vector) index) (setf (elt s index) new-value))
-  (:method (new-value (s sequence) index)
-    (sequence:protocol-unimplemented '(setf sequence:elt) s))
   #+sb-doc
   (:documentation
    "Replaces the element at position INDEX of SEQUENCE with NEW-VALUE
@@ -83,7 +60,7 @@
    the sequence protocol is not implemented for the class of
    SEQUENCE."))
 
-(defgeneric sequence:make-sequence-like
+(define-protocol-generic sequence:make-sequence-like
     (sequence length &key initial-element initial-contents)
   (:method ((s list) length &key
             (initial-element nil iep) (initial-contents nil icp))
@@ -105,9 +82,6 @@
       (icp (make-array length :element-type (array-element-type s)
                        :initial-contents initial-contents))
       (t (make-array length :element-type (array-element-type s)))))
-  (:method ((s sequence) length &key initial-element initial-contents)
-    (declare (ignore initial-element initial-contents))
-    (sequence:protocol-unimplemented 'sequence:make-sequence-like s))
   #+sb-doc
   (:documentation
    "Returns a freshly allocated sequence of length LENGTH and of the
@@ -118,7 +92,7 @@
    error if the sequence protocol is not implemented for the class of
    SEQUENCE."))
 
-(defgeneric sequence:adjust-sequence
+(define-protocol-generic sequence:adjust-sequence
     (sequence length &key initial-element initial-contents)
   (:method ((s list) length &key initial-element (initial-contents nil icp))
     (if (eql length 0)
@@ -146,9 +120,6 @@
       ((eql (length s) length)
        (if icp (replace s initial-contents) s))
       (t (apply #'adjust-array s length args))))
-  (:method ((s sequence) length &rest args)
-    (declare (ignore args))
-    (sequence:protocol-unimplemented 'sequence:adjust-sequence s))
   #+sb-doc
   (:documentation
    "Return destructively modified SEQUENCE or a freshly allocated
@@ -164,7 +135,9 @@
 
 ;;; The general protocol
 
-(defgeneric sequence:make-sequence-iterator (sequence &key from-end start end)
+(define-protocol-generic sequence:make-sequence-iterator
+    ((sequence sequence) &key from-end start end)
+  (:protocol-unimplemented-method nil)
   (:method ((s sequence) &key from-end (start 0) end)
     (multiple-value-bind (iterator limit from-end)
         (sequence:make-simple-sequence-iterator
@@ -173,11 +146,6 @@
               #'sequence:iterator-step #'sequence:iterator-endp
               #'sequence:iterator-element #'(setf sequence:iterator-element)
               #'sequence:iterator-index #'sequence:iterator-copy)))
-  (:method ((s t) &key from-end start end)
-    (declare (ignore from-end start end))
-    (error 'type-error
-           :datum s
-           :expected-type 'sequence))
   #+sb-doc
   (:documentation
    "Returns a sequence iterator for SEQUENCE or, if START and/or END
@@ -204,8 +172,9 @@
 ;;; magic termination value for list :from-end t
 (defvar *exhausted* (cons nil nil))
 
-(defgeneric sequence:make-simple-sequence-iterator
-    (sequence &key from-end start end)
+(define-protocol-generic sequence:make-simple-sequence-iterator
+    ((sequence sequence) &key from-end start end)
+  (:protocol-unimplemented-method nil)
   (:method ((s list) &key from-end (start 0) end)
     (if from-end
         (let* ((termination (if (= start 0) *exhausted* (nthcdr (1- start) s)))
@@ -240,7 +209,9 @@
    functions ITERATOR-STEP, ITERATOR-ENDP, ITERATOR-ELEMENT, (SETF
    ITERATOR-ELEMENT), ITERATOR-INDEX and ITERATOR-COPY."))
 
-(defgeneric sequence:iterator-step (sequence iterator from-end)
+(define-protocol-generic sequence:iterator-step
+    ((sequence sequence) iterator from-end)
+  (:protocol-unimplemented-method nil)
   (:method ((s list) iterator from-end)
     (if from-end
         (if (eq iterator s)
@@ -261,7 +232,9 @@
    "Moves ITERATOR one position forward or backward in SEQUENCE
    depending on the iteration direction encoded in FROM-END."))
 
-(defgeneric sequence:iterator-endp (sequence iterator limit from-end)
+(define-protocol-generic sequence:iterator-endp
+    ((sequence sequence) iterator limit from-end)
+  (:protocol-unimplemented-method nil)
   (:method ((s list) iterator limit from-end)
     (eq iterator limit))
   (:method ((s vector) iterator limit from-end)
@@ -274,7 +247,9 @@
    correspond to the end of SEQUENCE) with respect to the iteration
    direction encoded in FROM-END."))
 
-(defgeneric sequence:iterator-element (sequence iterator)
+(define-protocol-generic sequence:iterator-element
+    ((sequence sequence) iterator)
+  (:protocol-unimplemented-method nil)
   (:method ((s list) iterator)
     (car iterator))
   (:method ((s vector) iterator)
@@ -286,7 +261,9 @@
    "Returns the element of SEQUENCE associated to the position of
    ITERATOR."))
 
-(defgeneric (setf sequence:iterator-element) (new-value sequence iterator)
+(define-protocol-generic (setf sequence:iterator-element)
+    (new-value (sequence sequence) iterator)
+  (:protocol-unimplemented-method nil)
   (:method (o (s list) iterator)
     (setf (car iterator) o))
   (:method (o (s vector) iterator)
@@ -298,7 +275,8 @@
    "Destructively modifies SEQUENCE by replacing the sequence element
    associated to position of ITERATOR with NEW-VALUE."))
 
-(defgeneric sequence:iterator-index (sequence iterator)
+(define-protocol-generic sequence:iterator-index ((sequence sequence) iterator)
+  (:protocol-unimplemented-method nil)
   (:method ((s list) iterator)
     ;; FIXME: this sucks.  (In my defence, it is the equivalent of the
     ;; Apple implementation in Dylan...)
@@ -309,7 +287,8 @@
   (:documentation
    "Returns the position of ITERATOR in SEQUENCE."))
 
-(defgeneric sequence:iterator-copy (sequence iterator)
+(define-protocol-generic sequence:iterator-copy ((sequence sequence) iterator)
+  (:protocol-unimplemented-method nil)
   (:method ((s list) iterator) iterator)
   (:method ((s vector) iterator) iterator)
   (:method ((s sequence) iterator) iterator)
@@ -399,7 +378,9 @@
 
 ;;;; generic implementations for sequence functions.
 
-(defgeneric sequence:map (result-prototype function sequence &rest sequences)
+(define-protocol-generic sequence:map
+    (result-prototype function (sequence sequence) &rest sequences)
+  (:protocol-unimplemented-method nil)
   #+sb-doc
   (:documentation
    "Implements CL:MAP for extended sequences.
@@ -449,9 +430,10 @@
 
 ;;; FIXME: COUNT, POSITION and FIND share an awful lot of structure.
 ;;; They could usefully be defined in an OAOO way.
-(defgeneric sequence:count
+(define-protocol-generic sequence:count
     (item sequence &key from-end start end test test-not key)
-  (:argument-precedence-order sequence item))
+  (:argument-precedence-order sequence item)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:count
     (item (sequence sequence) &key from-end (start 0) end test test-not key)
   (let ((test (sequence:canonize-test test test-not))
@@ -465,8 +447,10 @@
             (incf count))
           (setq state (funcall step sequence state from-end)))))))
 
-(defgeneric sequence:count-if (pred sequence &key from-end start end key)
-  (:argument-precedence-order sequence pred))
+(define-protocol-generic sequence:count-if
+    (pred sequence &key from-end start end key)
+  (:argument-precedence-order sequence pred)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:count-if
     (pred (sequence sequence) &key from-end (start 0) end key)
   (let ((key (sequence:canonize-key key)))
@@ -479,8 +463,10 @@
             (incf count))
           (setq state (funcall step sequence state from-end)))))))
 
-(defgeneric sequence:count-if-not (pred sequence &key from-end start end key)
-  (:argument-precedence-order sequence pred))
+(define-protocol-generic sequence:count-if-not
+    (pred sequence &key from-end start end key)
+  (:argument-precedence-order sequence pred)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:count-if-not
     (pred (sequence sequence) &key from-end (start 0) end key)
   (let ((key (sequence:canonize-key key)))
@@ -493,9 +479,10 @@
             (incf count))
           (setq state (funcall step sequence state from-end)))))))
 
-(defgeneric sequence:find
+(define-protocol-generic sequence:find
     (item sequence &key from-end start end test test-not key)
-  (:argument-precedence-order sequence item))
+  (:argument-precedence-order sequence item)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:find
     (item (sequence sequence) &key from-end (start 0) end test test-not key)
   (let ((test (sequence:canonize-test test test-not))
@@ -509,8 +496,10 @@
             (return o))
           (setq state (funcall step sequence state from-end)))))))
 
-(defgeneric sequence:find-if (pred sequence &key from-end start end key)
-  (:argument-precedence-order sequence pred))
+(define-protocol-generic sequence:find-if
+    (pred sequence &key from-end start end key)
+  (:argument-precedence-order sequence pred)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:find-if
     (pred (sequence sequence) &key from-end (start 0) end key)
   (let ((key (sequence:canonize-key key)))
@@ -523,8 +512,10 @@
             (return o))
           (setq state (funcall step sequence state from-end)))))))
 
-(defgeneric sequence:find-if-not (pred sequence &key from-end start end key)
-  (:argument-precedence-order sequence pred))
+(define-protocol-generic sequence:find-if-not
+    (pred sequence &key from-end start end key)
+  (:argument-precedence-order sequence pred)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:find-if-not
     (pred (sequence sequence) &key from-end (start 0) end key)
   (let ((key (sequence:canonize-key key)))
@@ -537,9 +528,10 @@
             (return o))
           (setq state (funcall step sequence state from-end)))))))
 
-(defgeneric sequence:position
+(define-protocol-generic sequence:position
     (item sequence &key from-end start end test test-not key)
-  (:argument-precedence-order sequence item))
+  (:argument-precedence-order sequence item)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:position
     (item (sequence sequence) &key from-end (start 0) end test test-not key)
   (let ((test (sequence:canonize-test test test-not))
@@ -554,8 +546,10 @@
             (return pos))
           (setq state (funcall step sequence state from-end)))))))
 
-(defgeneric sequence:position-if (pred sequence &key from-end start end key)
-  (:argument-precedence-order sequence pred))
+(define-protocol-generic sequence:position-if
+    (pred sequence &key from-end start end key)
+  (:argument-precedence-order sequence pred)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:position-if
     (pred (sequence sequence) &key from-end (start 0) end key)
   (let ((key (sequence:canonize-key key)))
@@ -569,9 +563,10 @@
             (return pos))
           (setq state (funcall step sequence state from-end)))))))
 
-(defgeneric sequence:position-if-not
+(define-protocol-generic sequence:position-if-not
     (pred sequence &key from-end start end key)
-  (:argument-precedence-order sequence pred))
+  (:argument-precedence-order sequence pred)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:position-if-not
     (pred (sequence sequence) &key from-end (start 0) end key)
   (let ((key (sequence:canonize-key key)))
@@ -585,7 +580,8 @@
             (return pos))
           (setq state (funcall step sequence state from-end)))))))
 
-(defgeneric sequence:subseq (sequence start &optional end))
+(define-protocol-generic sequence:subseq (sequence start &optional end)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:subseq ((sequence sequence) start &optional end)
   (let* ((end (or end (length sequence)))
          (length (- end start))
@@ -602,11 +598,13 @@
           (setq state (funcall step sequence state from-end))
           (setq rstate (funcall rstep result rstate rfrom-end)))))))
 
-(defgeneric sequence:copy-seq (sequence))
+(define-protocol-generic sequence:copy-seq (sequence)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:copy-seq ((sequence sequence))
   (sequence:subseq sequence 0))
 
-(defgeneric sequence:fill (sequence item &key start end))
+(define-protocol-generic sequence:fill (sequence item &key start end)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:fill ((sequence sequence) item &key (start 0) end)
   (sequence:with-sequence-iterator (state limit from-end step endp elt setelt)
       (sequence :start start :end end)
@@ -616,9 +614,10 @@
       (funcall setelt item sequence state)
       (setq state (funcall step sequence state from-end)))))
 
-(defgeneric sequence:nsubstitute
+(define-protocol-generic sequence:nsubstitute
     (new old sequence &key start end from-end test test-not count key)
-  (:argument-precedence-order sequence new old))
+  (:argument-precedence-order sequence new old)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:nsubstitute (new old (sequence sequence) &key (start 0)
                                  end from-end test test-not count key)
   (let ((test (sequence:canonize-test test test-not))
@@ -634,9 +633,10 @@
           (funcall setelt new sequence state))
         (setq state (funcall step sequence state from-end))))))
 
-(defgeneric sequence:nsubstitute-if
+(define-protocol-generic sequence:nsubstitute-if
     (new predicate sequence &key start end from-end count key)
-  (:argument-precedence-order sequence new predicate))
+  (:argument-precedence-order sequence new predicate)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:nsubstitute-if
     (new predicate (sequence sequence) &key (start 0) end from-end count key)
   (let ((key (sequence:canonize-key key)))
@@ -651,9 +651,10 @@
           (funcall setelt new sequence state))
         (setq state (funcall step sequence state from-end))))))
 
-(defgeneric sequence:nsubstitute-if-not
+(define-protocol-generic sequence:nsubstitute-if-not
     (new predicate sequence &key start end from-end count key)
-  (:argument-precedence-order sequence new predicate))
+  (:argument-precedence-order sequence new predicate)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:nsubstitute-if-not
     (new predicate (sequence sequence) &key (start 0) end from-end count key)
   (let ((key (sequence:canonize-key key)))
@@ -668,9 +669,10 @@
           (funcall setelt new sequence state))
         (setq state (funcall step sequence state from-end))))))
 
-(defgeneric sequence:substitute
+(define-protocol-generic sequence:substitute
     (new old sequence &key start end from-end test test-not count key)
-  (:argument-precedence-order sequence new old))
+  (:argument-precedence-order sequence new old)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:substitute (new old (sequence sequence) &rest args &key
                                 (start 0) end from-end test test-not count key)
   (declare (truly-dynamic-extent args))
@@ -678,9 +680,10 @@
   (let ((result (copy-seq sequence)))
     (apply #'sequence:nsubstitute new old result args)))
 
-(defgeneric sequence:substitute-if
+(define-protocol-generic sequence:substitute-if
     (new predicate sequence &key start end from-end count key)
-  (:argument-precedence-order sequence new predicate))
+  (:argument-precedence-order sequence new predicate)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:substitute-if (new predicate (sequence sequence) &rest args
                                    &key (start 0) end from-end count key)
   (declare (truly-dynamic-extent args))
@@ -688,9 +691,10 @@
   (let ((result (copy-seq sequence)))
     (apply #'sequence:nsubstitute-if new predicate result args)))
 
-(defgeneric sequence:substitute-if-not
+(define-protocol-generic sequence:substitute-if-not
     (new predicate sequence &key start end from-end count key)
-  (:argument-precedence-order sequence new predicate))
+  (:argument-precedence-order sequence new predicate)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:substitute-if-not
     (new predicate (sequence sequence) &rest args &key
      (start 0) end from-end count key)
@@ -713,9 +717,10 @@
         (setq state1 (funcall step1 sequence1 state1 from-end1))
         (setq state2 (funcall step2 sequence2 state2 from-end2))))))
 
-(defgeneric sequence:replace
-    (sequence1 sequence2 &key start1 end1 start2 end2)
-  (:argument-precedence-order sequence2 sequence1))
+(define-protocol-generic sequence:replace
+    (sequence1 (sequence2 sequence) &key start1 end1 start2 end2)
+  (:argument-precedence-order sequence2 sequence1)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:replace
     ((sequence1 sequence) (sequence2 sequence) &key
      (start1 0) end1 (start2 0) end2)
@@ -725,7 +730,8 @@
        (%sequence-replace sequence1 replaces start1 end1 0 nil)))
     (t (%sequence-replace sequence1 sequence2 start1 end1 start2 end2))))
 
-(defgeneric sequence:nreverse (sequence))
+(define-protocol-generic sequence:nreverse ((sequence sequence))
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:nreverse ((sequence sequence))
   ;; FIXME: this, in particular the :from-end iterator, will suck
   ;; mightily if the user defines a list-like structure.
@@ -744,12 +750,15 @@
           (setq state1 (funcall step1 sequence state1 from-end1))
           (setq state2 (funcall step2 sequence state2 from-end2)))))))
 
-(defgeneric sequence:reverse (sequence))
+(define-protocol-generic sequence:reverse ((sequence sequence))
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:reverse ((sequence sequence))
   (let ((result (copy-seq sequence)))
     (sequence:nreverse result)))
 
-(defgeneric sequence:concatenate (result-prototype &rest sequences)
+(define-protocol-generic sequence:concatenate
+    (result-prototype &rest sequences)
+  (:protocol-unimplemented-method nil)
   #+sb-doc
   (:documentation
    "Implements CL:CONCATENATE for extended sequences.
@@ -774,8 +783,9 @@
          (incf index length))
     result))
 
-(defgeneric sequence:reduce
+(define-protocol-generic sequence:reduce
     (function sequence &key from-end start end initial-value)
+  (:protocol-unimplemented-method nil)
   (:argument-precedence-order sequence function))
 (defmethod sequence:reduce
     (function (sequence sequence) &key from-end (start 0) end key
@@ -797,8 +807,10 @@
                   (setq value (funcall function e value))
                   (setq value (funcall function value e)))))))))
 
-(defgeneric sequence:mismatch (sequence1 sequence2 &key from-end start1 end1
-                               start2 end2 test test-not key))
+(define-protocol-generic sequence:mismatch
+    (sequence1 sequence2
+     &key from-end start1 end1 start2 end2 test test-not key)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:mismatch
     ((sequence1 sequence) (sequence2 sequence) &key from-end (start1 0) end1
      (start2 0) end2 test test-not key)
@@ -834,8 +846,10 @@
               (setq state1 (funcall step1 sequence1 state1 from-end1))
               (setq state2 (funcall step2 sequence2 state2 from-end2))))))))
 
-(defgeneric sequence:search (sequence1 sequence2 &key from-end start1 end1
-                             start2 end2 test test-not key))
+(define-protocol-generic sequence:search
+    ((sequence1 sequence) sequence2
+     &key from-end start1 end1 start2 end2 test test-not key)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:search
     ((sequence1 sequence) (sequence2 sequence) &key from-end (start1 0) end1
      (start2 0) end2 test test-not key)
@@ -874,9 +888,10 @@
               (setq state2 (funcall step2 sequence2 state2 from-end2))))
           (setq start-state2 (funcall step2 sequence2 start-state2 from-end2)))))))
 
-(defgeneric sequence:delete
+(define-protocol-generic sequence:delete
     (item sequence &key from-end test test-not start end count key)
-  (:argument-precedence-order sequence item))
+  (:argument-precedence-order sequence item)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:delete (item (sequence sequence) &key
                             from-end test test-not (start 0) end count key)
   (let ((test (sequence:canonize-test test test-not))
@@ -915,9 +930,10 @@
             (setq state1 (funcall step1 sequence state1 from-end1))
             (setq state2 (funcall step2 sequence state2 from-end2))))))))
 
-(defgeneric sequence:delete-if
+(define-protocol-generic sequence:delete-if
     (predicate sequence &key from-end start end count key)
-  (:argument-precedence-order sequence predicate))
+  (:argument-precedence-order sequence predicate)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:delete-if (predicate (sequence sequence) &key
                                from-end (start 0) end count key)
   (let ((key (sequence:canonize-key key))
@@ -955,9 +971,10 @@
             (setq state1 (funcall step1 sequence state1 from-end1))
             (setq state2 (funcall step2 sequence state2 from-end2))))))))
 
-(defgeneric sequence:delete-if-not
+(define-protocol-generic sequence:delete-if-not
     (predicate sequence &key from-end start end count key)
-  (:argument-precedence-order sequence predicate))
+  (:argument-precedence-order sequence predicate)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:delete-if-not (predicate (sequence sequence) &key
                                    from-end (start 0) end count key)
   (let ((key (sequence:canonize-key key))
@@ -995,9 +1012,10 @@
             (setq state1 (funcall step1 sequence state1 from-end1))
             (setq state2 (funcall step2 sequence state2 from-end2))))))))
 
-(defgeneric sequence:remove
+(define-protocol-generic sequence:remove
     (item sequence &key from-end test test-not start end count key)
-  (:argument-precedence-order sequence item))
+  (:argument-precedence-order sequence item)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:remove (item (sequence sequence) &rest args &key
                             from-end test test-not (start 0) end count key)
   (declare (truly-dynamic-extent args))
@@ -1005,9 +1023,10 @@
   (let ((result (copy-seq sequence)))
     (apply #'sequence:delete item result args)))
 
-(defgeneric sequence:remove-if
+(define-protocol-generic sequence:remove-if
     (predicate sequence &key from-end start end count key)
-  (:argument-precedence-order sequence predicate))
+  (:argument-precedence-order sequence predicate)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:remove-if (predicate (sequence sequence) &rest args &key
                                from-end (start 0) end count key)
   (declare (truly-dynamic-extent args))
@@ -1015,9 +1034,10 @@
   (let ((result (copy-seq sequence)))
     (apply #'sequence:delete-if predicate result args)))
 
-(defgeneric sequence:remove-if-not
+(define-protocol-generic sequence:remove-if-not
     (predicate sequence &key from-end start end count key)
-  (:argument-precedence-order sequence predicate))
+  (:argument-precedence-order sequence predicate)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:remove-if-not (predicate (sequence sequence) &rest args
                                    &key from-end (start 0) end count key)
   (declare (truly-dynamic-extent args))
@@ -1025,8 +1045,9 @@
   (let ((result (copy-seq sequence)))
     (apply #'sequence:delete-if-not predicate result args)))
 
-(defgeneric sequence:delete-duplicates
-    (sequence &key from-end test test-not start end key))
+(define-protocol-generic sequence:delete-duplicates
+    (sequence &key from-end test test-not start end key)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:delete-duplicates
     ((sequence sequence) &key from-end test test-not (start 0) end key)
   (let ((test (sequence:canonize-test test test-not))
@@ -1071,8 +1092,9 @@
             (setq state1 (funcall step1 sequence state1 from-end1))
             (setq state2 (funcall step2 sequence state2 from-end2))))))))
 
-(defgeneric sequence:remove-duplicates
-    (sequence &key from-end test test-not start end key))
+(define-protocol-generic sequence:remove-duplicates
+    (sequence &key from-end test test-not start end key)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:remove-duplicates
     ((sequence sequence) &rest args &key from-end test test-not (start 0) end key)
   (declare (truly-dynamic-extent args))
@@ -1100,20 +1122,25 @@
         (funcall setelt (aref vector i) sequence state)
         (setq state (funcall step sequence state from-end))))))
 
-(defgeneric sequence:sort (sequence predicate &key key))
+(define-protocol-generic sequence:sort (sequence predicate &key key)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:sort ((sequence sequence) predicate &rest args &key key)
   (declare (truly-dynamic-extent args)
            (ignore key))
   (apply #'%sort-with-temp-vector #'sort sequence predicate args))
 
-(defgeneric sequence:stable-sort (sequence predicate &key key))
+(define-protocol-generic sequence:stable-sort (sequence predicate &key key)
+  (:protocol-unimplemented-method nil))
 (defmethod sequence:stable-sort
     ((sequence sequence) predicate &rest args &key key)
   (declare (truly-dynamic-extent args)
            (ignore key))
   (apply #'%sort-with-temp-vector #'stable-sort sequence predicate args))
 
-(defgeneric sequence:merge (result-prototype sequence1 sequence2 predicate &key key)
+(define-protocol-generic sequence:merge
+    (result-prototype (sequence1 sequence) (sequence2 sequence) predicate
+     &key key)
+  (:protocol-unimplemented-method nil)
   #+sb-doc
   (:documentation
    "Implements CL:MERGE for extended sequences.
