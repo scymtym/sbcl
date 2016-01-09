@@ -477,6 +477,10 @@ TODO explain"
                              (format stream "~@<Process a different ~
                                              form instead of ~S.~@:>"
                                      form))
+                   :interactive (lambda ()
+                                  (format *query-io* "Form (not evaluated): ")
+                                  (finish-output *query-io*)
+                                  (list (read *query-io*)))
                    (declare (ignore condition))
                    (rec/restart function value)))))
       (rec/restart function form))))
