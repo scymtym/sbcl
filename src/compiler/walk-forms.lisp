@@ -424,10 +424,10 @@ TODO explain"
                  ;; Special operator => use the associated parser and
                  ;; info.
                  (:special-form info
-                                (let ((name (special-operator-info-name info)))
-                                  (with-parsed-special-operator (form name &rest components) ; TODO add hyperspec reference if parse fails
-                                    (apply #'process-application-like/maybe-setq
-                                           function form info name components))))
+                  (let ((name (special-operator-info-name info)))
+                    (with-parsed-special-operator (form name &rest components) ; TODO add hyperspec reference if parse fails
+                      (apply #'process-application-like/maybe-setq
+                             function form info name components))))
 
                  ;; ((lambda ...) ...) => application with lambda-list
                  ;; and body as extra information.
