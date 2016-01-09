@@ -65,7 +65,7 @@
                                                      form))))
          ;; Try to find arguments in the macroexpansion to decide
          ;; whether they are evaluated.
-         ;; TODO this is still wrong we should walk the expansion and take note when we encounter argument forms in the process
+         ;; TODO this is still wrong: we should walk the expansion and take note when we encounter argument forms in the process
          (arguments (mapcar (lambda (argument)
                               (block nil
                                 (funcall instead
@@ -91,10 +91,10 @@
 (defun form->tree (form)
   (let ((walker (make-instance 'ast-building-walker)))
     (handler-bind
-        ((sb-c::invalid-form-error
+        ((sb-c:invalid-form-error
           (lambda (condition)
             (use-value `(invalid-form
-                         ',(sb-c::invalid-form-error-form ; TODO export
+                         ',(sb-c:invalid-form-error-form ; TODO export
                             condition))
                        condition))))
       (let* ((env (sb-c::coerce-to-lexenv nil))
@@ -109,8 +109,9 @@
          form
          (lambda (form)
            (sb-c:classify-variable-form form env))
-         (lambda (form)
-           (sb-c:classify-application-form form env))
+         (lambda (form &key allow-compiler-macro)
+           (sb-c:classify-application-form
+            form env :allow-compiler-macro allow-compiler-macro))
          (lambda (kind expander form)
            (sb-c:expand-macro kind expander form env)))))))
 
@@ -123,13 +124,13 @@
 (labels ((space ()
            (cxml:unescaped "&nbsp;"))
          (call-with-parens (thunk)
-           (cxml:with-element "span"
-             (cxml:attribute "class" "paren")
-             (cxml:text "("))
-           (funcall thunk)
-           (cxml:with-element "span"
-             (cxml:attribute "class" "paren")
-             (cxml:text ")")))
+           (flet ((paren (which)
+                    (cxml:with-element "span"
+                                       (cxml:attribute "class" "paren")
+                                       (cxml:text which))))
+             (paren "(")
+             (funcall thunk)
+             (paren ")")))
          (do-children (children &optional indentation)
            (let ((*indent* *indent*))
              (loop :for (sub rest) :on children
@@ -189,6 +190,14 @@
                                 &key)
     (calloid name (structure-of node)))
 
+  (defmethod render-using-info ((node t) (info sb-c:special-operator-info) (name (eql 'let))
+                                &key)
+    (calloid name (structure-of node) 1))
+
+  (defmethod render-using-info ((node t) (info sb-c:special-operator-info) (name (eql 'let*))
+                                &key)
+    (calloid name (structure-of node) 1))
+
   (defmethod render-using-info ((node t) (info sb-c:special-operator-info) (name (eql 'progn))
                                 &key)
     (calloid name (structure-of node) 0))
@@ -211,12 +220,13 @@
                           (package-name package))))
          (symbol-name (when (symbolp name)
                         (string name)))
-         (classes     (list* kind name
-                             (when (typep info 'sb-c:leaf-info)
-                               (list (typecase name
-                                       (string 'string)
-                                       (number 'number)
-                                       (t      (type-of name))))))))
+         (classes     (list kind
+                            (if (typep info 'sb-c:leaf-info)
+                                (typecase name
+                                  (string 'string)
+                                  (number 'number)
+                                  (t      (type-of name)))
+                                name))))
     (cxml:with-element "span"
       (cxml:attribute "class" (format nil "~(~{~A~^ ~}~)" classes))
       (cxml:attribute "form-kind" kind)
