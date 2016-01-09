@@ -142,8 +142,9 @@
      walker form
      (lambda (form)
        (sb-c:classify-variable-form form env))
-     (lambda (form)
-       (sb-c:classify-application-form form env))
+     (lambda (form &key allow-compiler-macro)
+       (sb-c:classify-application-form
+        form env :allow-compiler-macro allow-compiler-macro))
      (lambda (kind expander form)
        (sb-c:expand-macro kind expander form env)))))
 
@@ -198,8 +199,9 @@
      form
      (lambda (form)
        (sb-c:classify-variable-form form env))
-     (lambda (form)
-       (sb-c:classify-application-form form env))
+     (lambda (form &key allow-compiler-macro)
+       (sb-c:classify-application-form
+        form env :allow-compiler-macro allow-compiler-macro))
      (lambda (kind expander form)
        (sb-c:expand-macro kind expander form env)))))
 

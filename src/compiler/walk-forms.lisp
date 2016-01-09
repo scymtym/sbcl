@@ -374,23 +374,25 @@ TODO explain"
                  (labels ((recurse/macro (&key (function function))
                             (let ((expansion (funcall expand-macro
                                                       info expander form)))
-                              (rec/restart function expansion))))
+                              ;; Compiler macros may decline.
+                              (if (and (eq expansion form)
+                                       (compiler-macro-info-p info))
+                                  (rec/restart function form :allow-compiler-macro nil)
+                                  (rec/restart function expansion)))))
                    (apply function
-                          (make-instead function form)
-                          #'recurse/macro
+                          (make-instead function form) #'recurse/macro
                           form info name
                           :expander expander
-                          (append
-                           (when argumentsp
-                             (list :arguments arguments))
-                           components)))))
+                          (append (when argumentsp
+                                    (list :arguments arguments))
+                                  components)))))
              ;; Note: "leaf" as in "tree node without children", not
              ;; only SB-C:LEAF.
              (process-leaf (function form info &rest components)
                (apply function
                       (make-instead function form) #'%nop-recurse
                       form info form components))
-             (rec (function form)
+             (rec (function form &key (allow-compiler-macro t))
                (form-case form
                  ;; Various "leaf" nodes => supply %NOP-RECURSE via
                  ;; PROCESS-LEAF.
@@ -441,7 +443,8 @@ TODO explain"
                  ;; functions.
                  (:named-application
                   (multiple-value-bind (kind where plist)
-                      (funcall classify-application form)
+                      (funcall classify-application form
+                               :allow-compiler-macro allow-compiler-macro)
                     (case kind
                       ((:compiler-macro :macro)
                        (let ((plist (copy-list plist))
@@ -466,9 +469,9 @@ TODO explain"
                  ;;
                  (t
                   (compiler-error 'invalid-form-error :form form))))
-             (rec/restart (function form)
+             (rec/restart (function form &key (allow-compiler-macro t))
                (restart-case
-                   (rec function form)
+                   (rec function form :allow-compiler-macro allow-compiler-macro)
                  (use-value (value &optional condition)
                    :report (lambda (stream)
                              (format stream "~@<Process a different ~
@@ -667,7 +670,7 @@ and COMPONENTS* respectively."
       ((nil)
        (values :application nil))))) ; unknown function
 
-(defun classify-application-form (form env)
+(defun classify-application-form (form env &key (allow-compiler-macro t))
   #!+sb-doc
   "TODO"
   (flet ((maybe-return (&optional kind where plist)
@@ -675,15 +678,16 @@ and COMPONENTS* respectively."
              (return-from classify-application-form
                (values kind where plist)))))
     ;; Neither lexical nor global
-    (multiple-value-bind (macro-function function-name) ; TODO do we have worry about whether FORM is (funcall ...)? see expand-compiler-macro
-        (let ((*lexenv* env))
-          (find-compiler-macro (first form) form))
-      ;; CLHS 3.2.2.1.3 specifies that NOTINLINE suppresses
-      ;; compiler-macros.
-      (when (and macro-function
-                 (not (fun-lexically-notinline-p function-name)))
-        (maybe-return :compiler-macro :global
-                      (list :expander macro-function))))
+    (when allow-compiler-macro
+      (multiple-value-bind (macro-function function-name) ; TODO do we have worry about whether FORM is (funcall ...)? see expand-compiler-macro
+          (let ((*lexenv* env))
+            (find-compiler-macro (first form) form))
+        ;; CLHS 3.2.2.1.3 specifies that NOTINLINE suppresses
+        ;; compiler-macros.
+        (when (and macro-function
+                   (not (fun-lexically-notinline-p function-name)))
+          (maybe-return :compiler-macro :global
+                        (list :expander macro-function)))))
     (multiple-value-call #'maybe-return
       (classify-application-form/lexical form env))
     (multiple-value-call #'maybe-return

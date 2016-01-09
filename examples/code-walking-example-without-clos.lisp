@@ -51,8 +51,9 @@
      form
      (lambda (form)
        (sb-c:classify-variable-form form sb-c::*lexenv*))
-     (lambda (form)
-       (sb-c:classify-application-form form sb-c::*lexenv*))
+     (lambda (form &key allow-compiler-macro)
+       (sb-c:classify-application-form
+        form sb-c::*lexenv* :allow-compiler-macro allow-compiler-macro))
      (lambda (kind expander form)
        (sb-c:expand-macro kind expander form sb-c::*lexenv*)))))
 
