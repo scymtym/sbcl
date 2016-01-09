@@ -754,22 +754,26 @@ Return VALUE without evaluating it."))
 Return the lexically apparent definition of the function NAME. NAME
 may also be a lambda expression.")
   (:parser
-   (cond
-     ((legal-fun-name-p thing)
-      (component :name thing))
-     ((typep thing '(cons (eql lambda) (cons list)))
-      ;; Components in reverse evaluation-order.
-      (multiple-value-bind (body declarations documentation)
-          (parse-body (nthcdr 2 thing) nil)
-        (component :body body)
-        (when documentation
-          (component :documentation documentation))
-        (component :declarations declarations))
-      (component :lambda-list (second thing)))
-     (t
-      (compiler-error "~@<Invalid argument to ~S special operator: ~
+   (flet ((process-lambda-like (lambda-list body)
+            ;; Components in reverse evaluation-order.
+            (multiple-value-bind (body declarations documentation)
+                (parse-body body nil)
+              (component :body body)
+              (when documentation
+                (component :documentation documentation))
+              (component :declarations declarations))
+            (component :lambda-list lambda-list)))
+    (cond
+      ((legal-fun-name-p thing)
+       (component :name thing))
+      ((typep thing '(cons (eql lambda) (cons list)))
+       (process-lambda-like (second thing) (nthcdr 2 thing)))
+      ((typep thing '(cons (eql sb!int:named-lambda) (cons list)))
+       (process-lambda-like (third thing) (nthcdr 3 thing)))
+      (t
+       (compiler-error "~@<Invalid argument to ~S special operator: ~
                        ~S.~@:>"
-                      'function thing))))
+                       'function thing)))))
   (:unparser
    (list (cond
            ((componentp :name)
