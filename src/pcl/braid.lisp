@@ -258,20 +258,32 @@
                   *standard-method-class-names*))
 
     (let* ((smc-class (find-class 'standard-method-combination))
-           (smc-wrapper (!bootstrap-get-slot 'standard-class
-                                             smc-class
-                                             'wrapper))
+           (smc-wrapper (!bootstrap-get-slot
+                         'standard-class smc-class 'wrapper))
            (smc (allocate-standard-instance smc-wrapper)))
       (flet ((set-slot (name value)
-               (!bootstrap-set-slot 'standard-method-combination
-                                    smc
-                                    name
-                                    value)))
+               (!bootstrap-set-slot
+                'standard-method-combination smc name value)))
         (set-slot 'source nil)
         (set-slot 'type-name 'standard)
         (set-slot '%documentation "The standard method combination.")
         (set-slot 'options ()))
-      (setq *standard-method-combination* smc))))
+      (setq *standard-method-combination* smc))
+
+    (let* ((omc-class (find-class 'short-method-combination))
+           (omc-wrapper (!bootstrap-get-slot
+                         'standard-class omc-class 'wrapper))
+           (omc (allocate-standard-instance omc-wrapper)))
+      (flet ((set-slot (name value)
+               (!bootstrap-set-slot
+                'short-method-combination omc name value)))
+        (set-slot 'source nil)
+        (set-slot 'type-name 'or)
+        (set-slot 'operator 'or)
+        (set-slot 'identity-with-one-argument t)
+        (set-slot '%documentation nil)
+        (set-slot 'options '(:most-specific-first)))
+      (setq *or-method-combination* omc))))
 
 ;;; Initialize a class metaobject.
 (defun !bootstrap-initialize-class
