@@ -720,18 +720,18 @@
   (error 'no-primary-method :generic-function generic-function :args args))
 
 (defmethod invalid-qualifiers ((gf generic-function)
-                               combin
+                               combin ; TODO specialize on standard-method-combination
                                method)
-  (let ((qualifiers (method-qualifiers method)))
-    (let ((why (cond
-                 ((cdr qualifiers) "has too many qualifiers")
-                 (t (aver (not (member (car qualifiers)
-                                       '(:around :before :after))))
-                    "has an invalid qualifier"))))
-      (invalid-method-error
-       method
-       "The method ~S on ~S ~A.~%~
-        Standard method combination requires all methods to have one~%~
-        of the single qualifiers :AROUND, :BEFORE and :AFTER or to~%~
-        have no qualifier at all."
-       method gf why))))
+  (let* ((qualifiers (method-qualifiers method))
+         (why (cond
+                ((cdr qualifiers) "has too many qualifiers")
+                (t (aver (not (member (car qualifiers)
+                                      '(:around :before :after))))
+                   "has an invalid qualifier"))))
+    (invalid-method-error
+     method
+     "The method ~S on ~S ~A.~%~
+      Standard method combination requires all methods to have one~%~
+      of the single qualifiers :AROUND, :BEFORE and :AFTER or to~%~
+      have no qualifier at all."
+     method gf why)))

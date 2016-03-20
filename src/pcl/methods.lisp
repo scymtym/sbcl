@@ -580,7 +580,7 @@
               ;; invocation time; I dunno what the rationale was, and it
               ;; sucks.  Nevertheless, it's probably a programmer error, so
               ;; let's warn anyway. -- CSR, 2003-08-20
-              (let ((mc (generic-function-method-combination generic-functioN)))
+              (let ((mc (generic-function-method-combination generic-function)))
                 (cond
                   ((eq mc *standard-method-combination*)
                    (when (and qualifiers

@@ -102,7 +102,7 @@
 (defmethod print-object ((mc standard-method-combination) stream)
   (print-unreadable-object (mc stream :type t :identity t)
     (format stream
-            "~S ~S"
+            "~S ~:S"
             (slot-value-or-default mc 'type-name)
             (slot-value-or-default mc 'options))))
 
