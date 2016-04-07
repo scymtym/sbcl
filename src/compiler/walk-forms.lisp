@@ -745,18 +745,15 @@ and COMPONENTS* respectively."
                            env compile-env instead)
   #!+sb-doc
   "TODO"
-  (with-unique-names (whole environment)
-    (let* ((body (parse-defmacro
-                  lambda-list whole (list body) name 'macrolet
-                  :environment environment))
-           (form (funcall instead
-                          :form `(lambda (,whole ,environment)
-                                   ,@declarations
-                                   ,body)))
-           (expander (compile-in-lexenv
-                      nil (second form) ; remove (FUNCTION ...)
-                      (make-restricted-lexenv compile-env))))
-      (push `(,name . (macro . ,expander)) (lexenv-funs env)))))
+  (let* ((macro-lambda (make-macro-lambda
+                        nil lambda-list
+                        (append declarations (list body))
+                        'macrolet name))
+         (macro-lambda (funcall instead :form macro-lambda))
+         (expander (compile-in-lexenv
+                    nil (second macro-lambda) ; strip (FUNCTION ...)
+                    (make-restricted-lexenv compile-env))))
+    (push `(,name . (macro . ,expander)) (lexenv-funs env))))
 
 (defun note-lexical-symbol-macro (name expansion env)
   #!+sb-doc

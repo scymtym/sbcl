@@ -92,7 +92,6 @@
 ;;; Example hook which traces execution by BREAKing at variable
 ;;; accesses, function calls and special operator evaluation (traces
 ;;; "through" macros).
-(defvar *path* nil)
 (defun tracer (wrap recurse form kind name &rest components)
   (typecase kind
     ;; Do not modify constants and (compiler-internal) leaf
@@ -120,7 +119,7 @@
 
 ;;; Another example hook which modifies certain function calls.
 ;;;
-;; See comments in TRACER function.
+;;; See comments in TRACER function.
 (defun trickster (wrap recurse form kind name &rest components)
   (let ((sb-c::*walk-mode* :old))
     (log:info form kind name components))

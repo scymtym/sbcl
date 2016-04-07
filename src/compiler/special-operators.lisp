@@ -177,9 +177,9 @@
               name old)))
   (setf (info :function :special-operator-info name) new-value))
 
-(def!macro with-parsed-special-operator ((form name &rest components)
-                                         &body body
-                                         &environment env)
+(defmacro with-parsed-special-operator ((form name &rest components)
+                                        &body body
+                                        &environment env)
   (declare (ignore env)) ; TODO temp
   ;; Compile-time check existence of the NAME special operator.
   (let ((constantp nil #+TODO-make-this-work (constantp name env)))

@@ -157,7 +157,10 @@
 
 (defclass my-hook (base-hook)
   ()
-  (:metaclass sb-mop:funcallable-standard-class))
+  (:metaclass sb-mop:funcallable-standard-class)
+  (:documentation
+   "A hook that processes LET forms by removing bindings with name
+    B."))
 
 (defmethod on-form ((walker my-hook)
                     (form t) (kind sb-c:special-operator-info) (name (eql 'let))
