@@ -803,3 +803,27 @@
 
 (with-test (:name (format :no-overeager-compile-time-processing))
   (checked-compile '(lambda (x) (format t "~/nopackage:nofun/" x))))
+
+;;; In a context with circularity detection enabled, logical block
+;;; directives with true atsign argument and identical argument(s)
+;;; could result in bogus circularities being detected. The reason for
+;;; this problem is explained in CLHS 22.3.5.2:
+;;;
+;;;   If the at-sign modifier is used [...] Other than the difference
+;;;   in its argument, ~@<...~:> is exactly the same as ~<...~:>
+;;;   except that circularity detection is not applied if ~@<...~:> is
+;;;   encountered at top level in a format string. This ensures that
+;;;   circularity detection is applied only to data lists, not to
+;;;   format argument lists.
+;;;
+(defclass tricky-print-object () ())
+(defmethod print-object ((object tricky-print-object) stream)
+  ;; Two logical blocks with identical argument lists but different
+  ;; nested control strings.
+  (format stream "~? ~?" "~@<foo~:>" nil "~@<bar~:>" nil))
+(with-test (:name (format :aesthetic-directive pprint-logical-block *print-circle*))
+  ;; Print the two logical blocks in a contexts with circularity
+  ;; detection.
+  (let ((*print-circle* t))
+    (assert (string= (format nil "~A" (make-instance 'tricky-print-object))
+                     "foo bar"))))

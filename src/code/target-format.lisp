@@ -1209,20 +1209,38 @@
 (defun interpret-format-logical-block
        (stream orig-args args prefix per-line-p insides suffix atsignp)
   (let ((arg (if atsignp args (next-arg))))
-    (if per-line-p
-        (pprint-logical-block
-            (stream arg :per-line-prefix prefix :suffix suffix)
-          (let ((*logical-block-popper* (lambda () (pprint-pop))))
-            (catch 'up-and-out
-              (interpret-directive-list stream insides
-                                        (if atsignp orig-args arg)
-                                        arg))))
-        (pprint-logical-block (stream arg :prefix prefix :suffix suffix)
-          (let ((*logical-block-popper* (lambda () (pprint-pop))))
-            (catch 'up-and-out
-              (interpret-directive-list stream insides
-                                        (if atsignp orig-args arg)
-                                        arg))))))
+    (dx-flet ((interpret-directives (stream)
+                (catch 'up-and-out
+                  (interpret-directive-list
+                   stream insides (if atsignp orig-args arg) arg)))
+              (interpret-block (cont)
+                (declare (type function cont))
+                (if per-line-p
+                    (pprint-logical-block
+                        (stream arg :per-line-prefix prefix :suffix suffix)
+                      (let ((*logical-block-popper* (lambda () (pprint-pop))))
+                        (funcall cont stream)))
+                    (pprint-logical-block (stream arg :prefix prefix :suffix suffix)
+                      (let ((*logical-block-popper* (lambda () (pprint-pop))))
+                        (funcall cont stream))))))
+      ;; TODO the second part of the test attempts to check for "at toplevel"
+      ;; 1. Is this correct?
+      ;; 2. If so, make a predicate
+      (if (and atsignp (not (or (boundp '*outside-args*) *logical-block-popper*)))
+          ;; In case ATSIGNP is true and this directive appears at
+          ;; toplevel, disable circularity detection for entering the
+          ;; logical block and restore the previous value for
+          ;; processing the contained directives. This prevents
+          ;; logical blocks with identical argument lists (e.g. '())
+          ;; from being treated as identical despite potentially
+          ;; containing different directives.
+          ;; See CLHS 22.3.5.2 "If the at-sign modifier ...".
+          (let ((print-circle *print-circle*)
+                (*print-circle* nil))
+            (interpret-block (lambda (stream)
+                               (let ((*print-circle* print-circle))
+                                 (interpret-directives stream)))))
+          (interpret-block #'interpret-directives))))
   (if atsignp nil args))
 
 ;;;; format interpreter and support functions for user-defined method

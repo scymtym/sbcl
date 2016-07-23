@@ -4,6 +4,9 @@ changes relative to sbcl-1.3.11:
   * bug fix: calling a named function (e.g. a DEFUN) concurrently with
     redefining that same function could lead to execution of random bytes.
   * bug fix: yes-or-no-p accepts formatter functions (lp#1639490)
+  * bug fix: logical block FORMAT directives with true atsign argument and
+    identical arguments could result in bogus circularities being detected
+    (CLHS 22.3.5.2).
 
 changes in sbcl-1.3.11 relative to sbcl-1.3.10:
   * minor incompatible change: SB-EXT:*INTEXP-MAXIMUM-EXPONENT* is removed.
@@ -51,7 +54,7 @@ changes in sbcl-1.3.9 relative to sbcl-1.3.8:
   * optimization: better performance for some unoptimized operations on
     complex numbers.
   * bug fix: using the options :LOCAL-NICKNAMES and :LOCK in the same
-    DEFPACKAGE form no longer signals a bogus error
+    DEFPACKAGE form no longer signals a bogus error.
 
 changes in sbcl-1.3.8 relative to sbcl-1.3.7:
   * minor incompatible change: the system now understands that the CONDITION
