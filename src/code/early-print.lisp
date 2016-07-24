@@ -192,22 +192,25 @@
               t))))))
 
 (defmacro with-circularity-detection ((object stream) &body body)
-  (with-unique-names (marker body-name)
-    `(labels ((,body-name ()
-               ,@body))
-      (cond ((not *print-circle*) (,body-name))
-            (*circularity-hash-table*
-             (let ((,marker (check-for-circularity ,object t :logical-block)))
-               (if ,marker
-                   (when (handle-circularity ,marker ,stream)
-                    (,body-name))
-                  (,body-name))))
-            (t
-             (let ((*circularity-hash-table* (make-hash-table :test 'eq)))
-               (output-object ,object (make-broadcast-stream))
-               (let ((*circularity-counter* 0))
-                 (let ((,marker (check-for-circularity ,object t
-                                                       :logical-block)))
-                   (when ,marker
-                     (handle-circularity ,marker ,stream)))
-                (,body-name))))))))
+  (once-only ((object object))
+    `(labels ((thunk ()
+                ,@body)
+              (check-object (always-execute-body)
+                (let ((marker (check-for-circularity ,object t :logical-block)))
+                  (cond
+                    ((not marker)
+                     (thunk))
+                    ((handle-circularity marker ,stream)
+                     (thunk))
+                    (always-execute-body
+                     (thunk))))))
+       (declare (dynamic-extent #'thunk #'check-object))
+       (cond ((not *print-circle*)
+              (thunk))
+             (*circularity-hash-table*
+              (check-object nil))
+             (t
+              (let ((*circularity-hash-table* (make-hash-table :test 'eq)))
+                (output-object ,object (make-broadcast-stream))
+                (let ((*circularity-counter* 0))
+                  (check-object t))))))))
