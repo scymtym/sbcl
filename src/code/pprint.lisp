@@ -1368,7 +1368,7 @@ line break."
                  (force-pretty-output stream)))))
        nil))))
 
-(defun call-logical-block-printer (proc stream prefix per-line-p suffix
+(defun call-logical-block-printer (proc stream prefix per-line-p suffix circularity
                                    &optional (object nil obj-supplied-p))
   ;; PREFIX and SUFFIX will be checked for stringness by START-LOGICAL-BLOCK.
   ;; Doing it here would be more strict, but I really don't think it's worth
@@ -1387,27 +1387,34 @@ line break."
         ;; but I guess this is close enough.
         (output-object object stream)
         (dx-let ((state (cons 0 stream)))
-          (if obj-supplied-p
-              (with-circularity-detection (object stream)
-                (descend-into (stream)
-                  (start-logical-block stream prefix per-line-p suffix)
-                  (funcall proc object state stream)
-                  ;; Comment preserved for posterity:
-                  ;;   FIXME: Don't we need UNWIND-PROTECT to ensure this
-                  ;;   always gets executed?
-                  ;; I think not because I wouldn't characterize this as
-                  ;; "cleanup" code. If and only if you follow the accepted
-                  ;; protocol for defining and using print functions should
-                  ;; the behavior be expected to be reasonable and predictable.
-                  ;; Throwing to LINE-LIMIT-ABBREVIATION-HAPPENED is designed
-                  ;; to do the right thing, and printing should not generally
-                  ;; continue to have side-effects if the user felt it necessary
-                  ;; to nonlocally exit in an unexpected way for other reasons.
-                  (end-logical-block stream)))
-              (descend-into (stream)
-                (start-logical-block stream prefix per-line-p suffix)
-                (funcall proc state stream)
-                (end-logical-block stream)))))))
+          (cond
+            ((and obj-supplied-p circularity)
+             (with-circularity-detection (object stream)
+               (descend-into (stream)
+                 (start-logical-block stream prefix per-line-p suffix)
+                 (funcall proc object state stream)
+                 ;; Comment preserved for posterity:
+                 ;;   FIXME: Don't we need UNWIND-PROTECT to ensure this
+                 ;;   always gets executed?
+                 ;; I think not because I wouldn't characterize this as
+                 ;; "cleanup" code. If and only if you follow the accepted
+                 ;; protocol for defining and using print functions should
+                 ;; the behavior be expected to be reasonable and predictable.
+                 ;; Throwing to LINE-LIMIT-ABBREVIATION-HAPPENED is designed
+                 ;; to do the right thing, and printing should not generally
+                 ;; continue to have side-effects if the user felt it necessary
+                 ;; to nonlocally exit in an unexpected way for other reasons.
+                 (end-logical-block stream))))
+            (obj-supplied-p
+             (descend-into (stream)
+               (start-logical-block stream prefix per-line-p suffix)
+               (funcall proc object state stream)
+               (end-logical-block stream)))
+            (t
+             (descend-into (stream)
+               (start-logical-block stream prefix per-line-p suffix)
+               (funcall proc state stream)
+               (end-logical-block stream))))))))
 
 ;; Return non-nil if we should keep printing within the logical-block,
 ;; or NIL to stop printing due to non-list, length cutoff, or circularity.

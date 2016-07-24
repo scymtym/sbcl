@@ -1205,7 +1205,8 @@
      (pprint-logical-block
          (stream arg
                  ,(if per-line-p :per-line-prefix :prefix) ,prefix
-                 :suffix ,suffix)
+                 :suffix ,suffix
+                 :circularity ,(not atsignp))
        (let ((args arg)
              ,@(unless atsignp
                  `((orig-args arg))))

@@ -816,14 +816,33 @@
 ;;;   circularity detection is applied only to data lists, not to
 ;;;   format argument lists.
 ;;;
-(defclass tricky-print-object () ())
-(defmethod print-object ((object tricky-print-object) stream)
-  ;; Two logical blocks with identical argument lists but different
-  ;; nested control strings.
+(defclass two-top-level-logical-blocks-print-object () ())
+(defmethod print-object ((object two-top-level-logical-blocks-print-object) stream)
+  ;; Two logical blocks at top level of the respective format string
+  ;; with identical argument lists but different nested control
+  ;; strings.
   (format stream "~? ~?" "~@<foo~:>" nil "~@<bar~:>" nil))
+
+(defclass two-non-top-level-logical-blocks-print-object () ())
+(defmethod print-object ((object two-non-top-level-logical-blocks-print-object) stream)
+  ;; Two logical blocks at top level of the respective format string
+  ;; with identical argument lists but different nested control
+  ;; strings.
+  (let ((args '((#1=(nil) #1#))))
+    (format stream "~? ~?" "~{~{~@<foo~:>~}~}" args "~{~{~@<bar~:>~}~}" args)))
+
 (with-test (:name (format :aesthetic-directive pprint-logical-block *print-circle*))
   ;; Print the two logical blocks in a contexts with circularity
   ;; detection.
   (let ((*print-circle* t))
-    (assert (string= (format nil "~A" (make-instance 'tricky-print-object))
+    (assert (string= (format nil "~A" (make-instance 'two-top-level-logical-blocks-print-object))
+                     "foo bar"))
+    (assert (string= (format nil "~A" (make-instance 'two-non-top-level-logical-blocks-print-object))
                      "foo bar"))))
+
+;; TODO this is a way to compiled format controls
+;; note that princ-to-string enables circularity detection. maybe this can be used for the other case as well?
+(define-condition a () () (:report (lambda (c s) (format s "~@<foo~:>"))))
+(define-condition b () () (:report (lambda (c s) (format s "~@<bar~:>"))))
+(let ((*print-circle* t))
+  (princ-to-string (list (make-condition 'a) (make-condition 'b))))

@@ -18,7 +18,8 @@
                                  &rest keys
                                  &key (prefix nil prefixp)
                                       (per-line-prefix nil per-line-prefix-p)
-                                      (suffix ""))
+                                      (suffix "")
+                                      (circularity 't))
                                 &body body)
   #!+sb-doc
   "Group some output into a logical block. STREAM-SYMBOL should be either a
@@ -76,7 +77,7 @@
                    ,@body)))
        (let ,bindings
          (call-logical-block-printer #',proc ,stream-symbol
-                                     ,prefix ,per-line-prefix-p ,suffix
+                                     ,prefix ,per-line-prefix-p ,suffix ,circularity
                                      ,@(if object (list object)))))))
 
 (defmacro pprint-exit-if-list-exhausted ()
