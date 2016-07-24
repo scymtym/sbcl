@@ -838,11 +838,13 @@
     (assert (string= (format nil "~A" (make-instance 'two-top-level-logical-blocks-print-object))
                      "foo bar"))
     (assert (string= (format nil "~A" (make-instance 'two-non-top-level-logical-blocks-print-object))
-                     "foo bar"))))
+                     "#1=foo#1# #2=bar#2#"))))
 
 ;; TODO this is a way to compiled format controls
 ;; note that princ-to-string enables circularity detection. maybe this can be used for the other case as well?
 (define-condition a () () (:report (lambda (c s) (format s "~@<foo~:>"))))
 (define-condition b () () (:report (lambda (c s) (format s "~@<bar~:>"))))
-(let ((*print-circle* t))
-  (princ-to-string (list (make-condition 'a) (make-condition 'b))))
+(let ((*print-circle* t)
+      (a (make-condition 'a))
+      (b (make-condition 'b)))
+  (princ-to-string (list a a b b))) ; repetition checks that circularity detection is not just generally disabled
