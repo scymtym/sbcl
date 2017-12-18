@@ -1297,11 +1297,15 @@
       (with-single-package-locked-error
           (:symbol name "defining ~S as a function")
         (setf defined-fun
-              (if (consp inline-lambda)
-                  ;; FIFTH as an accessor - how informative!
-                  ;; Obfuscation aside, I doubt this is even right.
-                  (get-defined-fun name (fifth inline-lambda))
-                  (get-defined-fun name))))
+              (etypecase inline-lambda
+                ((cons (eql lambda))
+                 ;; SECOND as an accessor - how informative!
+                 (get-defined-fun name (second inline-lambda)))
+                ((cons (eql lambda-with-lexenv))
+                 ;; THIRD as an accessor - how informative!
+                 (get-defined-fun name (third inline-lambda)))
+                ((member nil :accessor :predicate)
+                 (get-defined-fun name)))))
       (when (boundp '*lexenv*)
         (aver (producing-fasl-file))
         (if (member name *fun-names-in-this-file* :test #'equal)

@@ -537,7 +537,7 @@ Return VALUE without evaluating it."
      `(lambda ,(strip-lambda-list (second thing) :name) ,@(name-context)))
     ((lambda-with-lexenv)
      ;; FIXME: Get the original DEFUN name here.
-     `(lambda ,(fifth thing)))
+     `(lambda ,(third thing)))
     (otherwise
      (compiler-error "Not a valid lambda expression:~%  ~S"
                      thing))))
