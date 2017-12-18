@@ -528,27 +528,36 @@ Return VALUE without evaluating it."
       (list :in context))))
 
 ;;;; FUNCTION and NAMED-LAMBDA
+(defun %name-lambdalike (kind name raw-lambda-list parsed-lambda-list)
+  (flet ((stripped-lambda-list ()
+           (%strip-lambda-list :name raw-lambda-list parsed-lambda-list)))
+    (ecase kind
+      (named-lambda
+       (or name
+           `(lambda ,(stripped-lambda-list) ,(name-context))))
+      (lambda
+       `(lambda ,(stripped-lambda-list) ,@(name-context)))
+      (lambda-with-lexenv
+       ;; FIXME: Get the original DEFUN name here.
+       `(lambda ,raw-lambda-list)))))
+
 (defun name-lambdalike (thing)
-  (case (car thing)
-    ((named-lambda)
-     (or (second thing)
-         `(lambda ,(strip-lambda-list (third thing) :name) ,(name-context))))
-    ((lambda)
-     `(lambda ,(strip-lambda-list (second thing) :name) ,@(name-context)))
-    ((lambda-with-lexenv)
-     ;; FIXME: Get the original DEFUN name here.
-     `(lambda ,(third thing)))
-    (otherwise
-     (compiler-error "Not a valid lambda expression:~%  ~S"
-                     thing))))
+  (multiple-value-bind (kind lambda-expression name lexenv lambda-list)
+      (parse-lambdalike thing)
+    (declare (ignore lexenv))
+    (%name-lambdalike kind name (second lambda-expression) lambda-list)))
 
 (defun fun-name-leaf (thing)
   (cond
     ((typep thing
-            '(cons (member lambda named-lambda lambda-with-lexenv)))
-     (values (ir1-convert-lambdalike
-              thing :debug-name (name-lambdalike thing))
-             t))
+            '(cons (member lambda named-lambda lambda-with-lexenv))) ; TODO make a type
+     ;; TODO don't really have to parse it here. just delay NAME-LAMBDALIKE so it doesn't signal the errors
+     (multiple-value-bind (kind lambda-expression name lexenv lambda-list)
+         (parse-lambdalike thing)
+       (values (%ir1-convert-lambdalike
+                thing kind lambda-expression name lexenv lambda-list
+                :debug-name (%name-lambdalike kind name (second lambda-expression) lambda-list))
+               t)))
     ((legal-fun-name-p thing)
      (values (find-lexically-apparent-fun
               thing "as the argument to FUNCTION")

@@ -1196,23 +1196,25 @@
 (defvar *strip-lamba-list-retain-aux* #+sb-xc t #-sb-xc nil)
 
 ;;; Return LAMBDA-LIST with some pieces removed.
-(defun strip-lambda-list (lambda-list how)
-  (handler-case (parse-lambda-list lambda-list :silent t)
-   (error () lambda-list)
-   (:no-error (llks req opt rest keys aux &rest ignore)
-     (declare (ignore ignore))
-     (multiple-value-bind (opt keys aux)
-         (ecase how
-          (:arglist
-           (values opt keys (if *strip-lamba-list-retain-aux* aux nil)))
-          ;; The name of an anonymous lambda is an arbitrary list,
-          ;; not necessarily the original list.
-          (:name (values (mapcar #'parse-optional-arg-spec opt); Keep name.
-                         (mapcar #'parse-key-arg-spec keys) ; Keep keyword.
-                         nil))) ; Discard &AUX vars
-       (let ((new (make-lambda-list llks nil req opt rest keys aux)))
-         ;; It is harmful to the space-saving effect of this function
-         ;; if reconstituting the list results in an unnecessary copy.
-         (if (equal new lambda-list) lambda-list new))))))
+(defun %strip-lambda-list (how lambda-list parsed-lambda-list) ; TODO could accept individual args here
+  (binding* (((llks req opt rest keys aux) (values-list parsed-lambda-list))
+             ((opt keys aux)
+              (ecase how
+                (:arglist
+                 (values opt keys (if *strip-lamba-list-retain-aux* aux nil)))
+                ;; The name of an anonymous lambda is an arbitrary list,
+                ;; not necessarily the original list.
+                (:name (values (mapcar #'parse-optional-arg-spec opt) ; Keep name.
+                               (mapcar #'parse-key-arg-spec keys) ; Keep keyword.
+                               nil))))  ; Discard &AUX vars
+             (new (make-lambda-list llks nil req opt rest keys aux)))
+    ;; It is harmful to the space-saving effect of this function
+    ;; if reconstituting the list results in an unnecessary copy.
+    (if (equal new lambda-list) lambda-list new)))
+
+(defun strip-lambda-list (how lambda-list)
+  (handler-case
+      (%strip-lambda-list how lambda-list (multiple-value-list (parse-lambda-list lambda-list :silent t)))
+    (error () lambda-list)))
 
 (/show0 "parse-lambda-list.lisp end of file")

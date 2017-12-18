@@ -1153,18 +1153,19 @@ necessary, since type inference may take arbitrarily long to converge.")
                                               ;; work, but it doesn't.
                                               ;; -- WHN 2001-09-20
                                               (missing-arg)))
-  (let ((*current-path* path))
-    (parse-lambdalike lambda-expression))
-  (let* ((*current-path* path)
-         (component (make-empty-component))
-         (*current-component* component)
-         (debug-name-tail (or name (name-lambdalike lambda-expression)))
-         (source-name (or name '.anonymous.)))
+  (declare (notinline ir1-convert-lambda))
+  (binding* ((*current-path* path)
+             ((kind lambda-expression1 name1 lexenv lambda-list)
+              (parse-lambdalike lambda-expression))
+             (component (make-empty-component))
+             (*current-component* component)
+             (debug-name-tail (or name (%name-lambdalike kind name (second lambda-expression1) lambda-list))) ; TODO get rid of this
+             (source-name (or name '.anonymous.)))
     (setf (component-name component) (debug-name 'initial-component debug-name-tail)
           (component-kind component) :initial)
     (let* ((fun (let ((*allow-instrumenting* t))
-                  (funcall #'ir1-convert-lambdalike
-                           lambda-expression
+                  (funcall #'%ir1-convert-lambdalike
+                           lambda-expression kind lambda-expression1 name1 lexenv lambda-list
                            :source-name source-name)))
            ;; Convert the XEP using the policy of the real function. Otherwise
            ;; the wrong policy will be used for deciding whether to type-check

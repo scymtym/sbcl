@@ -85,13 +85,21 @@
     (t
      (make-lambda-var :%source-name name))))
 
-;;; Parse a lambda list into a list of VAR structures, stripping off
-;;; any &AUX bindings. Each arg name is checked for legality, and
-;;; duplicate names are checked for. If an arg is globally special,
-;;; the var is marked as :SPECIAL instead of :LEXICAL. &KEY,
-;;; &OPTIONAL and &REST args are annotated with an ARG-INFO structure
-;;; which contains the extra information. If we hit something losing,
-;;; we bug out with COMPILER-ERROR. These values are returned:
+;;; Turn LAMBDA-LIST, which is a parsed lambda list (as in
+;;; (multiple-value-list (parse-lambda-list ...)))  into a list of VAR
+;;; structures, stripping off any &AUX bindings.
+;;;
+;;; LAMBDA-LIST is expecting to have been sanitized earlier (so
+;;; actually (m-v-l (check-lambda-list-names (parse-lambda-list ...)))
+;;; in stead of the above form).
+;;;
+;;; If an arg is globally special, the var is marked as :SPECIAL
+;;; instead of :LEXICAL. &KEY, &OPTIONAL and &REST args are annotated
+;;; with an ARG-INFO structure which contains the extra information.
+;;;
+;;; If we hit something losing, we bug out with COMPILER-ERROR.
+;;;
+;;; These values are returned:
 ;;;  1. a list of the var structures for each top level argument;
 ;;;  2. a flag indicating whether &KEY was specified;
 ;;;  3. a flag indicating whether other &KEY args are allowed;
@@ -99,9 +107,9 @@
 ;;;  5. a list of the &AUX values.
 (declaim (ftype (sfunction (list) (values list boolean boolean list list))
                 make-lambda-vars))
-(defun make-lambda-vars (list)
+(defun make-lambda-vars (lambda-list)
   (multiple-value-bind (llks required optional rest/more keys aux)
-      (multiple-value-call #'check-lambda-list-names (parse-lambda-list list))
+      (values-list lambda-list)
     (collect ((vars)
               (aux-vars)
               (aux-vals))
@@ -974,63 +982,75 @@
     (values lambda-expression lambda-list)))
 
 ;;; Convert a LAMBDA form into a LAMBDA leaf or an OPTIONAL-DISPATCH leaf.
-(defun ir1-convert-lambda (form &key (source-name '.anonymous.)
-                           debug-name maybe-add-debug-catch
-                           system-lambda)
+(defun %ir1-convert-lambda (lambda-expression lambda-list
+                            &key
+                            (source-name '.anonymous.)
+                            debug-name maybe-add-debug-catch
+                            system-lambda)
   (when (and system-lambda maybe-add-debug-catch)
     (bug "Both SYSTEM-LAMBDA and MAYBE-ADD-DEBUG-CATCH specified"))
-  (parse-lambda-expression form)
   (unless (or debug-name (neq '.anonymous. source-name))
-    (setf debug-name (name-lambdalike form)))
-  (multiple-value-bind (vars keyp allow-other-keys aux-vars aux-vals)
-      (make-lambda-vars (cadr form))
-    (multiple-value-bind (forms decls doc) (parse-body (cddr form) t)
-      (binding* (((*lexenv* result-type post-binding-lexenv
-                   lambda-list explicit-check)
-                  (process-decls decls (append aux-vars vars) nil
-                                 :binding-form-p t :allow-lambda-list t))
-                 (debug-catch-p (and maybe-add-debug-catch
-                                     *allow-instrumenting*
-                                     (policy *lexenv*
-                                             (>= insert-debug-catch 2))))
-                 (forms (if debug-catch-p
-                            (wrap-forms-in-debug-catch forms)
-                            forms))
-                 (forms (if (eq result-type *wild-type*)
-                            forms
-                            `((the ,(type-specifier result-type) (progn ,@forms)))))
-                 (*allow-instrumenting* (and (not system-lambda) *allow-instrumenting*))
-                 (res (cond ((or (find-if #'lambda-var-arg-info vars) keyp)
-                             (ir1-convert-hairy-lambda forms vars keyp
-                                                       allow-other-keys
-                                                       aux-vars aux-vals
-                                                       :post-binding-lexenv post-binding-lexenv
-                                                       :source-name source-name
-                                                       :debug-name debug-name
-                                                       :system-lambda system-lambda))
-                            (t
-                             (ir1-convert-lambda-body forms vars
-                                                      :aux-vars aux-vars
-                                                      :aux-vals aux-vals
-                                                      :post-binding-lexenv post-binding-lexenv
-                                                      :source-name source-name
-                                                      :debug-name debug-name
-                                                      :system-lambda system-lambda)))))
-        (when explicit-check
-          (setf (getf (functional-plist res) 'explicit-check) explicit-check))
-        (setf (functional-inline-expansion res) form)
-        (setf (functional-arg-documentation res)
-              (if (eq lambda-list :unspecified)
-                  (strip-lambda-list (cadr form) :arglist)
-                  lambda-list))
-        (setf (functional-documentation res) doc)
-        (when (boundp '*lambda-conversions*)
-          ;; KLUDGE: Not counting TL-XEPs is a lie, of course, but
-          ;; keeps things less confusing to users of TIME, where this
-          ;; count gets used.
-          (unless (and (consp debug-name) (eq 'tl-xep (car debug-name)))
-            (incf *lambda-conversions*)))
-        res))))
+    (setf debug-name (%name-lambdalike 'lambda nil (second lambda-expression) lambda-list))) ; TODO NAME
+  (binding* (((vars keyp allow-other-keys aux-vars aux-vals)
+              (make-lambda-vars lambda-list))
+             ((forms decls doc) (parse-body (cddr lambda-expression) t))
+             ((*lexenv* result-type post-binding-lexenv
+                        decl-lambda-list explicit-check)
+              (process-decls decls (append aux-vars vars) nil
+                             :binding-form-p t :allow-lambda-list t))
+             (debug-catch-p (and maybe-add-debug-catch
+                                 *allow-instrumenting*
+                                 (policy *lexenv*
+                                         (>= insert-debug-catch 2))))
+             (forms (if debug-catch-p
+                        (wrap-forms-in-debug-catch forms)
+                        forms))
+             (forms (if (eq result-type *wild-type*)
+                        forms
+                        `((the ,(type-specifier result-type) (progn ,@forms)))))
+             (*allow-instrumenting* (and (not system-lambda) *allow-instrumenting*))
+             (res (cond ((or (find-if #'lambda-var-arg-info vars) keyp)
+                         (ir1-convert-hairy-lambda forms vars keyp
+                                                   allow-other-keys
+                                                   aux-vars aux-vals
+                                                   :post-binding-lexenv post-binding-lexenv
+                                                   :source-name source-name
+                                                   :debug-name debug-name
+                                                   :system-lambda system-lambda))
+                        (t
+                         (ir1-convert-lambda-body forms vars
+                                                  :aux-vars aux-vars
+                                                  :aux-vals aux-vals
+                                                  :post-binding-lexenv post-binding-lexenv
+                                                  :source-name source-name
+                                                  :debug-name debug-name
+                                                  :system-lambda system-lambda)))))
+    (when explicit-check
+      (setf (getf (functional-plist res) 'explicit-check) explicit-check))
+    (setf (functional-inline-expansion res) lambda-expression)
+    (setf (functional-arg-documentation res)
+          (if (eq decl-lambda-list :unspecified)
+              (%strip-lambda-list :arglist (second lambda-expression) lambda-list)
+              decl-lambda-list))
+    (setf (functional-documentation res) doc)
+    (when (boundp '*lambda-conversions*)
+      ;; KLUDGE: Not counting TL-XEPs is a lie, of course, but
+      ;; keeps things less confusing to users of TIME, where this
+      ;; count gets used.
+      (unless (and (consp debug-name) (eq 'tl-xep (car debug-name)))
+        (incf *lambda-conversions*)))
+    res))
+
+(declaim (inline ir1-convert-lambda))
+(defun ir1-convert-lambda (form &rest args
+                           &key
+                             source-name debug-name maybe-add-debug-catch
+                             system-lambda)
+  (declare (ignore source-name debug-name maybe-add-debug-catch system-lambda)
+           (dynamic-extent args))
+  (multiple-value-bind (lambda-expression lambda-list)
+      (parse-lambda-expression form)
+    (apply #'%ir1-convert-lambda lambda-expression lambda-list args)))
 
 (defun wrap-forms-in-debug-catch (forms)
   #!+unwind-to-frame-and-call-vop
@@ -1062,59 +1082,6 @@
            (return-from return-value-tag
              (progn
                ,@forms))))))))
-
-;;; helper for LAMBDA-like things, to massage them into a form
-;;; suitable for IR1-CONVERT-LAMBDA.
-(defun ir1-convert-lambdalike (thing
-                               &key
-                               (source-name '.anonymous.)
-                               debug-name)
-  (let ((kind (parse-lambdalike thing)))
-   (when (and (not debug-name) (eq '.anonymous. source-name))
-     (setf debug-name (name-lambdalike thing)))
-   (ecase kind
-     (lambda
-      (ir1-convert-lambda thing
-                          :maybe-add-debug-catch t
-                          :source-name source-name
-                          :debug-name debug-name))
-     (named-lambda
-      (let ((name (cadr thing))
-            (lambda-expression `(lambda ,@(cddr thing))))
-        (if (and name (legal-fun-name-p name))
-            (let ((defined-fun-res (get-defined-fun name (second lambda-expression)))
-                  (res (ir1-convert-lambda lambda-expression
-                                           :maybe-add-debug-catch t
-                                           :source-name name))
-                  (info (info :function :info name)))
-              (assert-global-function-definition-type name res)
-              (push res (defined-fun-functionals defined-fun-res))
-              (unless (or
-                       (eq (defined-fun-inlinep defined-fun-res) :notinline)
-                       ;; Don't treat recursive stubs like CAR as self-calls
-                       ;; Maybe just use the fact that it is a known function?
-                       ;; Though a known function may be used
-                       ;; because of some other attributues but
-                       ;; still wants to get optimized self calls
-                       (and info
-                            (or (fun-info-templates info)
-                                (fun-info-transforms info)
-                                (fun-info-ltn-annotate info)
-                                (fun-info-ir2-convert info)
-                                (fun-info-optimizer info))))
-                (substitute-leaf-if
-                 (lambda (ref)
-                   (policy ref (> recognize-self-calls 0)))
-                 res defined-fun-res))
-              res)
-            (ir1-convert-lambda lambda-expression
-                                :maybe-add-debug-catch t
-                                :debug-name
-                                (or name (name-lambdalike thing))))))
-     (lambda-with-lexenv
-      (ir1-convert-inline-lambda thing
-                                 :source-name source-name
-                                 :debug-name debug-name)))))
 
 ;;; Convert the forms produced by RECONSTRUCT-LEXENV to LEXENV
 (defun process-inline-lexenv (inline-lexenv)
@@ -1123,7 +1090,7 @@
                (if (null inline-lexenv)
                    lexenv
                    (destructuring-bind (type bindings &optional body) inline-lexenv
-                     (case type
+                     (ecase type
                        (:declare
                         (recurse body
                                  (process-decls `((declare ,@bindings)) nil nil)))
@@ -1149,49 +1116,109 @@
                                                            :compile))))))))
     (recurse inline-lexenv (make-null-lexenv))))
 
-;;; Convert FUN as a lambda in the null environment, but use the
-;;; current compilation policy. Note that FUN may be a
-;;; LAMBDA-WITH-LEXENV, so we may have to augment the environment to
-;;; reflect the state at the definition site.
-(defun ir1-convert-inline-lambda (fun
-                                  &key
-                                  (source-name '.anonymous.)
-                                  debug-name
-                                  system-lambda
-                                  (policy (lexenv-policy *lexenv*)))
+(defun %ir1-convert-inline-lambda (lambda-expression lexenv lambda-list
+                                   &key
+                                     (source-name '.anonymous.)
+                                     debug-name
+                                     system-lambda
+                                     (policy (lexenv-policy *lexenv*)))
   (when (and (not debug-name) (eq '.anonymous. source-name))
-    (setf debug-name (name-lambdalike fun)))
-  (let* ((lambda-with-lexenv-p (eq (car fun) 'lambda-with-lexenv))
-         (body (if lambda-with-lexenv-p
-                   `(lambda ,@(cddr fun))
-                   fun))
-         (*lexenv*
-           (if lambda-with-lexenv-p
-               (make-lexenv
-                :default (process-inline-lexenv (second fun))
-                :handled-conditions (lexenv-handled-conditions *lexenv*)
-                :policy policy)
-               (make-almost-null-lexenv
-                policy
-                ;; Inherit MUFFLE-CONDITIONS from the call-site lexenv
-                ;; rather than the definition-site lexenv, since it seems
-                ;; like a much more common case.
-                (lexenv-handled-conditions *lexenv*))))
-         (clambda (ir1-convert-lambda body
-                                      :source-name source-name
-                                      :debug-name debug-name
-                                      :system-lambda system-lambda)))
+    (setf debug-name (%name-lambdalike 'lambda-with-lexenv nil (second lambda-expression) lambda-list)))
+  (let* ((*lexenv*
+          (if lexenv
+              (make-lexenv
+               :default (process-inline-lexenv lexenv)
+               :handled-conditions (lexenv-handled-conditions *lexenv*)
+               :policy policy)
+              (make-almost-null-lexenv
+               policy
+               ;; Inherit MUFFLE-CONDITIONS from the call-site lexenv
+               ;; rather than the definition-site lexenv, since it seems
+               ;; like a much more common case.
+               (lexenv-handled-conditions *lexenv*))))
+         (clambda (%ir1-convert-lambda lambda-expression lambda-list
+                                       :source-name source-name
+                                       :debug-name debug-name
+                                       :system-lambda system-lambda)))
     (setf (functional-inline-expanded clambda) t)
     clambda))
-;;;; defining global functions
-;;; Given a lambda-list, return a FUN-TYPE object representing the signature:
-;;; return type is *, and each individual arguments type is T -- but we get
-;;; the argument counts and keywords.
-;;; TODO: enhance this to optionally accept an alist of (var . type)
-;;; and use that lieu of SB-INTERPRETER:APPROXIMATE-PROTO-FN-TYPE.
-(defun ftype-from-lambda-list (lambda-list)
+
+;;; Convert FORM as a lambda in the null environment, but use the
+;;; current compilation policy. Note that FORM may be a
+;;; LAMBDA-WITH-LEXENV, so we may have to augment the environment to
+;;; reflect the state at the definition site.
+(declaim (inline ir1-convert-inline-lambda))
+(defun ir1-convert-inline-lambda (form &rest args
+                                  &key source-name debug-name system-lambda policy)
+  (declare (ignore source-name debug-name system-lambda policy))
+  (binding* (((nil lambda-expression nil lexenv lambda-list)
+              (parse-lambdalike form)))
+    (apply #'%ir1-convert-inline-lambda lambda-expression lexenv lambda-list
+           args)))
+
+;;; helper for LAMBDA-like things, to massage them into a form
+;;; suitable for IR1-CONVERT-LAMBDA.
+(defun %ir1-convert-lambdalike (thing kind lambda-expression name lexenv lambda-list ; TODO get rid of thing if possible
+                               &key
+                               (source-name '.anonymous.)
+                               debug-name)
+  (when (and (not debug-name) (eq '.anonymous. source-name))
+    (setf debug-name (%name-lambdalike kind name (second lambda-expression) lambda-list))) ; TODO name
+  (ecase kind
+    (lambda
+        (ir1-convert-lambda thing
+         :maybe-add-debug-catch t
+         :source-name source-name
+         :debug-name debug-name))
+    (named-lambda
+        (if (and name (legal-fun-name-p name))
+            (let ((defined-fun-res (%get-defined-fun name lambda-list))
+                  (res (%ir1-convert-lambda lambda-expression lambda-list
+                                            :maybe-add-debug-catch t
+                                            :source-name name))
+                  (info (info :function :info name)))
+              (assert-global-function-definition-type name res)
+              (push res (defined-fun-functionals defined-fun-res))
+              (unless (or
+                       (eq (defined-fun-inlinep defined-fun-res) :notinline)
+                       ;; Don't treat recursive stubs like CAR as self-calls
+                       ;; Maybe just use the fact that it is a known function?
+                       ;; Though a known function may be used
+                       ;; because of some other attributues but
+                       ;; still wants to get optimized self calls
+                       (and info
+                            (or (fun-info-templates info)
+                                (fun-info-transforms info)
+                                (fun-info-ltn-annotate info)
+                                (fun-info-ir2-convert info)
+                                (fun-info-optimizer info))))
+                (substitute-leaf-if
+                 (lambda (ref)
+                   (policy ref (> recognize-self-calls 0)))
+                 res defined-fun-res))
+              res)
+            (%ir1-convert-lambda lambda-expression lambda-list
+                                 :maybe-add-debug-catch t
+                                 :debug-name
+                                 (or name (%name-lambdalike
+                                           thing kind name lambda-list)))))
+    (lambda-with-lexenv
+     (%ir1-convert-inline-lambda lambda-expression lexenv lambda-list
+                                 :source-name source-name
+                                 :debug-name debug-name))))
+
+(declaim (inline ir1-convert-lambdalike))
+(defun ir1-convert-lambdalike (thing &rest args &key source-name debug-name)
+  (declare (dynamic-extent args)
+           (ignore source-name debug-name))
+  (multiple-value-bind (kind lambda-expression name lexenv lambda-list)
+      (parse-lambdalike thing)
+    (apply #'%ir1-convert-lambdalike
+           thing kind lambda-expression name lexenv lambda-list args)))
+
+(defun %ftype-from-lambda-list (lambda-list)
   (multiple-value-bind (llks req opt rest key-list)
-      (parse-lambda-list lambda-list :silent t)
+      (values-list lambda-list)
     (flet ((list-of-t (list) (mapcar (constantly t) list)))
       (let ((reqs (list-of-t req))
             (opts (when opt (cons '&optional (list-of-t opt))))
@@ -1205,10 +1232,20 @@
             (allow (when (ll-kwds-allowp llks) '(&allow-other-keys))))
         (compiler-specifier-type `(function (,@reqs ,@opts ,@rest ,@keys ,@allow) *))))))
 
+;;;; defining global functions
+;;; Given a lambda-list, return a FUN-TYPE object representing the signature:
+;;; return type is *, and each individual arguments type is T -- but we get
+;;; the argument counts and keywords.
+;;; TODO: enhance this to optionally accept an alist of (var . type)
+;;; and use that lieu of SB-INTERPRETER:APPROXIMATE-PROTO-FN-TYPE.
+(defun ftype-from-lambda-list (lambda-list)
+  (%ftype-from-lambda-list
+   (multiple-value-list (parse-lambda-list lambda-list :silent t))))
+
 ;;; Get a DEFINED-FUN object for a function we are about to define. If
 ;;; the function has been forward referenced, then substitute for the
 ;;; previous references.
-(defun get-defined-fun (name &optional (lambda-list nil lp))
+(defun %get-defined-fun (name &optional (lambda-list nil lp))
   (proclaim-as-fun-name name)
   (when (boundp '*free-funs*)
     (let ((found (find-free-fun name "shouldn't happen! (defined-fun)")))
@@ -1224,7 +1261,7 @@
                           :type (if (eq :declared where-from)
                                     (leaf-type found)
                                     (if lp
-                                        (ftype-from-lambda-list lambda-list)
+                                        (%ftype-from-lambda-list lambda-list)
                                         (specifier-type 'function))))))
                (substitute-leaf res found)
                (setf (gethash name *free-funs*) res)))
@@ -1232,8 +1269,15 @@
             ;; for this name, then blow it away and try again.
             ((defined-fun-functionals found)
              (remhash name *free-funs*)
-             (get-defined-fun name lambda-list))
+             (%get-defined-fun name lambda-list))
             (t found)))))
+
+(defun get-defined-fun (name &optional (lambda-list nil lambda-list-p))
+  (if lambda-list-p
+      (let ((lambda-list (multiple-value-list
+                          (parse-lambda-list lambda-list))))
+        (%get-defined-fun name lambda-list))
+      (%get-defined-fun name)))
 
 ;;; Check a new global function definition for consistency with
 ;;; previous declaration or definition, and assert argument/result
