@@ -1212,7 +1212,7 @@
     ;; if reconstituting the list results in an unnecessary copy.
     (if (equal new lambda-list) lambda-list new)))
 
-(defun strip-lambda-list (how lambda-list)
+(defun strip-lambda-list (how lambda-list) ; TODO maybe we can even remove the handler case now?
   (handler-case
       (%strip-lambda-list how lambda-list (multiple-value-list (parse-lambda-list lambda-list :silent t)))
     (error () lambda-list)))
