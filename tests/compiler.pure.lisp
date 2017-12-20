@@ -214,6 +214,26 @@
           ((lambda (&key ((#\c #\c) #\c)) "foo")   t)
           ((lambda (&key ((:c c-var) #\c)) c-var)  nil))))
 
+(with-test (:name (compile :lambda-list :malformed &optional &key :lp-1738638))
+  (mapc (lambda (case)
+          (destructuring-bind (form expected-reports) case
+            (multiple-value-bind (fun failure-p
+                                  warnings style-warnings
+                                  notes compiler-errors)
+                (test-util:checked-compile form :allow-failure t)
+              (declare (ignore warnings style-warnings notes))
+              (assert (functionp fun))
+              (assert failure-p)
+              (assert (length compiler-errors) (length expected-reports))
+              (loop for raw-expected in expected-reports ; TODO make a test util for this
+                    for expected = (format nil raw-expected)
+                    for condition in compiler-errors
+                    for report = (with-standard-io-syntax
+                                   (princ-to-string condition))
+                    do (assert (search expected report))))))
+        '(((lambda (&optional (a b c d))) ("Malformed &OPTIONAL parameter: (A B C D)"))
+          )))
+
 ;;; As reported and fixed by Antonio Martinez-Shotton sbcl-devel
 ;;; 2002-09-12, this failed in sbcl-0.7.7.23. (with failed AVER
 ;;; "(LEAF-HAS-SOURCE-NAME-P LEAF)")

@@ -1153,6 +1153,8 @@ necessary, since type inference may take arbitrarily long to converge.")
                                               ;; work, but it doesn't.
                                               ;; -- WHN 2001-09-20
                                               (missing-arg)))
+  (let ((*current-path* path))
+    (parse-lambdalike lambda-expression))
   (let* ((*current-path* path)
          (component (make-empty-component))
          (*current-component* component)

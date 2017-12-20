@@ -904,25 +904,82 @@
 
     res))
 
+;;; Parse a lambda expression in the looser sense, that is accept
+;;; a) (lambda LAMBDA-LIST . BODY)
+;;; b) (named-lambda NAME LAMBDA-LIST . BODY)
+;;; c) (lambda-with-lexenv ENV LAMBDA-LIST . BODY)
+;;;
+;;; Return multiple values:
+;;; 1) kind
+;;; 2) lambda expression (identical to THING for case a))
+;;; 3) NIL or name (case b))
+;;; 4) NIL or an "inline lexenv" (case c))
+;;; 5) parsed and checked lambda list
+(declaim (ftype (sfunction (t)
+                           (values (member lambda named-lambda lambda-with-lexenv)
+                                   (cons (eql lambda))
+                                   (or string symbol cons)
+                                   (or null (cons (member :declare :macro :symbol-macro)))
+                                   cons))
+                parse-lambdalike))
+(defun parse-lambdalike (thing)
+  (labels ((do-lambda-list (kind position)
+             (unless (proper-list-of-length-p
+                      thing (1+ position) most-positive-fixnum) ; TODO max should be nil
+               (compiler-error "The ~S expression does not have a ~
+                                lambda list at position ~D:~% ~S"
+                               kind position thing))
+             (let ((lambda-list (nth position thing)))
+               (unless (listp lambda-list)
+                 (compiler-error "The ~S expression has a non-list ~
+                                  at position ~D:~% ~S"
+                                 kind position thing))
+               (multiple-value-list
+                (multiple-value-call #'check-lambda-list-names
+                  (parse-lambda-list lambda-list)))))
+           (make-result (kind lambda-expression lambda-list-position
+                              &key name lexenv)
+             (values kind lambda-expression name lexenv
+                     (do-lambda-list kind lambda-list-position))))
+    (etypecase thing
+      ((not cons)
+       (compiler-error "A ~S was found when expecting a lambda ~
+                        expression:~% ~S"
+                       (type-of thing) thing))
+      ((cons (eql lambda))
+       (make-result 'lambda thing 1))
+
+      ((cons (eql named-lambda))
+       (unless (proper-list-of-length-p thing 2 most-positive-fixnum)
+         )
+       (destructuring-bind (name &rest rest) (rest thing)
+         (make-result 'named-lambda `(lambda ,@rest) 2 :name name)))
+
+      ((cons (eql lambda-with-lexenv))
+       (unless (proper-list-of-length-p thing 2 most-positive-fixnum)
+         )
+       (destructuring-bind (lexenv &rest rest) (rest thing)
+         (make-result 'lambda-with-lexenv `(lambda ,@rest) 2
+                      :lexenv lexenv))))))
+
+;;; Use PARSE-LAMBDALIKE to parse a lambda expression in the stricter
+;;; sense, that is a list of the form (lambda LAMBDA-LIST . BODY).
+(declaim (inline parse-lambda-expression))
+(defun parse-lambda-expression (thing)
+  (binding* (((kind lambda-expression nil nil lambda-list)
+              (parse-lambdalike thing)))
+    (unless (eq kind 'lambda)
+      (compiler-error "~S was expected but ~S was found:~%  ~S"
+                      'lambda kind thing))
+    (values lambda-expression lambda-list)))
+
 ;;; Convert a LAMBDA form into a LAMBDA leaf or an OPTIONAL-DISPATCH leaf.
 (defun ir1-convert-lambda (form &key (source-name '.anonymous.)
                            debug-name maybe-add-debug-catch
                            system-lambda)
-  (unless (consp form)
-    (compiler-error "A ~S was found when expecting a lambda expression:~%  ~S"
-                    (type-of form)
-                    form))
-  (unless (eq (car form) 'lambda)
-    (compiler-error "~S was expected but ~S was found:~%  ~S"
-                    'lambda
-                    (car form)
-                    form))
-  (unless (and (consp (cdr form)) (listp (cadr form)))
-    (compiler-error
-     "The lambda expression has a missing or non-list lambda list:~%  ~S"
-     form))
   (when (and system-lambda maybe-add-debug-catch)
     (bug "Both SYSTEM-LAMBDA and MAYBE-ADD-DEBUG-CATCH specified"))
+  (parse-lambda-expression form)
   (unless (or debug-name (neq '.anonymous. source-name))
     (setf debug-name (name-lambdalike form)))
   (multiple-value-bind (vars keyp allow-other-keys aux-vars aux-vals)
@@ -1012,51 +1069,52 @@
                                &key
                                (source-name '.anonymous.)
                                debug-name)
-  (when (and (not debug-name) (eq '.anonymous. source-name))
-    (setf debug-name (name-lambdalike thing)))
-  (ecase (car thing)
-    ((lambda)
-     (ir1-convert-lambda thing
-                         :maybe-add-debug-catch t
-                         :source-name source-name
-                         :debug-name debug-name))
-    ((named-lambda)
-     (let ((name (cadr thing))
-           (lambda-expression `(lambda ,@(cddr thing))))
-       (if (and name (legal-fun-name-p name))
-           (let ((defined-fun-res (get-defined-fun name (second lambda-expression)))
-                 (res (ir1-convert-lambda lambda-expression
-                                          :maybe-add-debug-catch t
-                                          :source-name name))
-                 (info (info :function :info name)))
-             (assert-global-function-definition-type name res)
-             (push res (defined-fun-functionals defined-fun-res))
-             (unless (or
-                      (eq (defined-fun-inlinep defined-fun-res) :notinline)
-                      ;; Don't treat recursive stubs like CAR as self-calls
-                      ;; Maybe just use the fact that it is a known function?
-                      ;; Though a known function may be used
-                      ;; because of some other attributues but
-                      ;; still wants to get optimized self calls
-                      (and info
-                           (or (fun-info-templates info)
-                               (fun-info-transforms info)
-                               (fun-info-ltn-annotate info)
-                               (fun-info-ir2-convert info)
-                               (fun-info-optimizer info))))
-               (substitute-leaf-if
-                (lambda (ref)
-                  (policy ref (> recognize-self-calls 0)))
-                res defined-fun-res))
-             res)
-           (ir1-convert-lambda lambda-expression
-                               :maybe-add-debug-catch t
-                               :debug-name
-                               (or name (name-lambdalike thing))))))
-    ((lambda-with-lexenv)
-     (ir1-convert-inline-lambda thing
-                                :source-name source-name
-                                :debug-name debug-name))))
+  (let ((kind (parse-lambdalike thing)))
+   (when (and (not debug-name) (eq '.anonymous. source-name))
+     (setf debug-name (name-lambdalike thing)))
+   (ecase kind
+     (lambda
+      (ir1-convert-lambda thing
+                          :maybe-add-debug-catch t
+                          :source-name source-name
+                          :debug-name debug-name))
+     (named-lambda
+      (let ((name (cadr thing))
+            (lambda-expression `(lambda ,@(cddr thing))))
+        (if (and name (legal-fun-name-p name))
+            (let ((defined-fun-res (get-defined-fun name (second lambda-expression)))
+                  (res (ir1-convert-lambda lambda-expression
+                                           :maybe-add-debug-catch t
+                                           :source-name name))
+                  (info (info :function :info name)))
+              (assert-global-function-definition-type name res)
+              (push res (defined-fun-functionals defined-fun-res))
+              (unless (or
+                       (eq (defined-fun-inlinep defined-fun-res) :notinline)
+                       ;; Don't treat recursive stubs like CAR as self-calls
+                       ;; Maybe just use the fact that it is a known function?
+                       ;; Though a known function may be used
+                       ;; because of some other attributues but
+                       ;; still wants to get optimized self calls
+                       (and info
+                            (or (fun-info-templates info)
+                                (fun-info-transforms info)
+                                (fun-info-ltn-annotate info)
+                                (fun-info-ir2-convert info)
+                                (fun-info-optimizer info))))
+                (substitute-leaf-if
+                 (lambda (ref)
+                   (policy ref (> recognize-self-calls 0)))
+                 res defined-fun-res))
+              res)
+            (ir1-convert-lambda lambda-expression
+                                :maybe-add-debug-catch t
+                                :debug-name
+                                (or name (name-lambdalike thing))))))
+     (lambda-with-lexenv
+      (ir1-convert-inline-lambda thing
+                                 :source-name source-name
+                                 :debug-name debug-name)))))
 
 ;;; Convert the forms produced by RECONSTRUCT-LEXENV to LEXENV
 (defun process-inline-lexenv (inline-lexenv)
