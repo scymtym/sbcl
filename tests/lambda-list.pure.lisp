@@ -47,6 +47,97 @@
     (error-p (&rest foo &rest bar))
     (error-p (&rest foo &optional bar))))
 
+(with-test (:name (sb-c::parse-lambda-list :ordinary :errors))
+  (flet ((test-case (lambda-list messages)
+           (let ((conditions '()))
+             (handler-bind
+                 ((warning (lambda (condition)
+                             (push condition conditions)
+                             (muffle-warning)))
+                  (condition (lambda (condition)
+                               (push condition conditions))))
+               (sb-c::parse-lambda-list
+                lambda-list
+                :signal-via #'signal :condition-class 'simple-condition))
+             (setf conditions (nreverse conditions))
+             (assert (= (length messages) (length conditions)))
+             (loop for message in messages
+                for condition in conditions
+                do (assert (search message (princ-to-string condition)))))))
+    (mapc
+     (lambda (spec) (apply #'test-case spec))
+     '(;; Dotted
+       ((x . y)               ("Illegal dotted lambda list: (X . Y)"))
+       ;; Required
+       ((1)                   ("Required argument is not a symbol: 1"))
+       (((x))                 ("Required argument is not a symbol: (X)"))
+       ;; Optional
+       ((&optional 1)         ("&OPTIONAL parameter is not a symbol or cons: 1"))
+       ((&optional (a b c d)) ("Malformed &OPTIONAL parameter: (A B C D)"))
+       ((&optional (a b . c)) ("Malformed &OPTIONAL parameter: (A B . C)"))
+       ((&optional (a b 1))   ("Supplied-p parameter name is not a symbol: 1"))
+       ;; Rest
+       ((&rest)               ("Expecting variable after &REST in: (&REST)"))
+       ((&rest 1)             ("&REST argument is not a symbol: 1"))
+       ((&rest (x))           ("&REST argument is not a symbol: (X)"))
+       ;; Key
+       ((&key 1)              ("&KEY parameter is not a symbol or cons: 1"))
+       ((&key (a b c d))      ("Malformed &KEY parameter: (A B C D)"))
+       ((&key (a b . c))      ("Malformed &KEY parameter: (A B . C)"))
+       ((&key ((x y z)))      ("Malformed &KEY parameter name: (X Y Z)"))
+       ((&key ((1 x)))        ("Keyword-name in ((1 X)) is not a symbol"))
+       ((&key ((:x 1)))       ("&KEY parameter name is not a symbol: 1"))
+       ((&key ((:x (x))))     ("&KEY parameter name is not a symbol: (X)"))
+       ((&key (a b 1))        ("Supplied-p parameter name is not a symbol: 1"))
+       ((&key (a b (c)))      ("Supplied-p parameter name is not a symbol: (C)"))
+       ;; Aux
+       ((&aux 1)              ("&AUX parameter is not a symbol or cons: 1"))
+       ((&aux (a b c))        ("Malformed &AUX parameter: (A B C)"))
+       ((&aux (1 1))          ("&AUX parameter name is not a symbol: 1"))
+       ((&aux ((a) 1))        ("&AUX parameter name is not a symbol: (A)"))))))
+
+(with-test (:name (sb-c::check-lambda-list-names :ordinary :errors))
+  (flet ((test-case (lambda-list expected-reports)
+           (let ((conditions '()))
+             (handler-bind
+                 ((warning (lambda (condition)
+                             (push condition conditions)
+                             (muffle-warning)))
+                  (condition (lambda (condition)
+                               (push condition conditions))))
+               (multiple-value-call #'sb-c::check-lambda-list-names
+                 (sb-c::parse-lambda-list lambda-list)
+                 :signal-via #'signal))
+             (setf conditions (nreverse conditions))
+             (assert (= (length expected-reports) (length conditions)))
+             (loop for raw-expected in expected-reports
+                   for expected = (format nil raw-expected)
+                   for condition in conditions
+                   for report = (let ((*print-pretty* nil))
+                                   (princ-to-string condition))
+                   do (assert (search expected report))))))
+    (mapc
+     (lambda (spec) (apply #'test-case spec))
+     '(
+       ;; Repeated names and keywords
+       ((x x)             ("The variable X occurs more than once in the ~
+                           lambda list"))
+       ((x &rest x)       ("The variable X occurs more than once in the ~
+                            lambda list"))
+       ((&optional x x)   ("The variable X occurs more than once in the ~
+                            lambda list"))
+       ((&key x ((:y x))) ("The variable X occurs more than once in the ~
+                            lambda list"))
+       ((&key x ((:x y))) ("The keyword :X occurs more than once in the ~
+                            lambda list"))
+       ;; Illegal variable names
+       ((:pi)             (":PI is a keyword and cannot be used as a local ~
+                            variable"
+                           ":PI names a defined constant, and cannot be ~
+                            used in an ordinary lambda list"))
+       ((pi)              ("COMMON-LISP:PI names a defined constant, and ~
+                            cannot be used in an ordinary lambda list"))))))
+
 (with-test (:name (:lambda-list :supplied-p-order 1))
   (let ((* 10))
     (assert (eql ((lambda (&key (x * *)) () x)) 10))

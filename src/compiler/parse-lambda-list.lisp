@@ -71,6 +71,7 @@
 ;;; recovery point.
 (declaim (ftype (sfunction
                  (list &key (:context t) (:accept integer) (:silent t)
+                            (:signal-via (or function symbol)) ; TODO callable
                             (:condition-class symbol))
                  (values (unsigned-byte 13) list list list list list list list))
                 parse-lambda-list))
@@ -85,6 +86,10 @@
     (list &key (context "an ordinary lambda list")
                (accept (lambda-list-keyword-mask
                         '(&optional &rest &more &key &allow-other-keys &aux)))
+               (signal-via (if (or (logtest (lambda-list-keyword-mask '&whole) accept)
+                                   (eq context 'defmethod))
+                               'error
+                               'compiler-error))
                (condition-class 'simple-program-error)
                ;; For internal method functions, just shut up about everything
                ;; that we could style-warn about. Interpreters tend to scan the
@@ -128,7 +133,7 @@
                                 kind what list)
                nil) ; Avoid "return convention is not fixed" optimizer note
              (need-arg (state)
-               (croak "expecting variable after ~A in: ~S" state list))
+               (croak "Expecting variable after ~A in: ~S" state list))
              (need-symbol (x why)
                (unless (symbolp x)
                  (croak "~A is not a symbol: ~S" why x)))
@@ -159,10 +164,7 @@
                  ;; Expecting a callee to understand how to signal conditions
                  ;; tailored to a particular caller is not how things are
                  ;; supposed to work.
-                 (funcall (if (or (destructuring-p) (eq context 'defmethod))
-                              'error
-                              'compiler-error)
-                          condition-class
+                 (funcall signal-via condition-class
                           :format-control string :format-arguments l))))
       (prog ((input list)
              (saved-state 0)
@@ -173,45 +175,45 @@
          LOOP
          (when (atom input)
            (cond ((not input)
-                  (if (logbitp state (bits &whole &rest &more &environment))
-                      (need-arg arg)))
+                  (when (logbitp state (bits &whole &rest &more &environment))
+                    (need-arg arg)))
                  ;; Whenever &BODY is accepted, so is a dotted tail.
                  ((and (logtest (bits &body) accept)
                        (not (logtest (bits &rest &key &aux) seen))
                        (symbolp input))
                   (setf rest (list input)))
                  (t
-                  (croak "illegal dotted lambda list: ~S" list)))
+                  (croak "Illegal dotted lambda list: ~S" list)))
            (return))
          (shiftf last-arg arg (pop input))
 
          (when (probably-ll-keyword-p arg)
            ;; Handle a probable lambda list keyword
            (multiple-value-bind (from-states to-state)
-              (case arg
-               (&optional (values (bits :required) (state &optional)))
-               (&rest     (values (bits :required &optional) (state &rest)))
-               (&more     (values (bits :required &optional) (state &more)))
-               (&key      (values (bits :required &optional :post-rest :post-more)
-                                  (state &key)))
-               (&allow-other-keys (values (bits &key) (state &allow-other-keys)))
-               (&aux (values (bits :post-more :required &optional :post-rest
-                                   &key &allow-other-keys) (state &aux)))
-               (&environment
-                (setq saved-state state)
-                (values (bits :required &optional :post-rest &key
-                              &allow-other-keys &aux) (state &environment)))
-               ;; If &BODY is accepted, then it is folded into &REST state,
-               ;; but if it should be rejected, then it gets its own bit.
-               ;; Error message production is thereby confined to one spot.
-               (&body (values (bits :required &optional)
-                              (if (logtest (bits &body) accept)
-                                  (state &rest) (state &body))))
-               (&whole
-                (values (if (and (state= state :required) (not required)
-                                 (not (logtest (bits &environment) seen)))
-                            (bits :required) 0)
-                        (state &whole))))
+               (case arg
+                 (&optional (values (bits :required) (state &optional)))
+                 (&rest     (values (bits :required &optional) (state &rest)))
+                 (&more     (values (bits :required &optional) (state &more)))
+                 (&key      (values (bits :required &optional :post-rest :post-more)
+                                    (state &key)))
+                 (&allow-other-keys (values (bits &key) (state &allow-other-keys)))
+                 (&aux (values (bits :post-more :required &optional :post-rest
+                                     &key &allow-other-keys) (state &aux)))
+                 (&environment
+                  (setq saved-state state)
+                  (values (bits :required &optional :post-rest &key
+                                &allow-other-keys &aux) (state &environment)))
+                 ;; If &BODY is accepted, then it is folded into &REST state,
+                 ;; but if it should be rejected, then it gets its own bit.
+                 ;; Error message production is thereby confined to one spot.
+                 (&body (values (bits :required &optional)
+                                (if (logtest (bits &body) accept)
+                                    (state &rest) (state &body))))
+                 (&whole
+                  (values (if (and (state= state :required) (not required)
+                                   (not (logtest (bits &environment) seen)))
+                              (bits :required) 0)
+                          (state &whole))))
              (when from-states
                (unless (logbitp to-state accept)
                  (let ((where ; Keyword never legal in this flavor lambda list.
@@ -299,43 +301,53 @@
                 (croak "arg is not a non-NIL symbol or a list of two elements: ~A"
                        arg))
               (need-bindable arg "Required argument")))
-        ;; FIXME: why not check symbol-ness of supplied-p variables now?
-        (flet ((scan-opt/key (list what-kind description)
+        (flet ((scan-opt/key (list what-kind parameter-label var-label)
                  (dolist (arg list)
-                   (when (defaultp arg what-kind)
-                     ;; FIXME:  (DEFUN F (&OPTIONAL (A B C D)) 42) crashes the
-                     ;; compiler, but not as consequence of the new parser.
-                     ;; (This is not a regression)
-                     (destructuring-bind (var &optional default sup-p) arg
-                       (if (and (consp var) (eq what-kind '&key))
+                   (cond
+                     ((not (defaultp arg what-kind)))
+                     ((not (proper-list-of-length-p arg 1 3))
+                      (croak "Malformed ~A: ~S" parameter-label arg))
+                     (t
+                      (destructuring-bind
+                            (var &optional default (sup-p nil sup-p-p))
+                          arg
+                        (when sup-p-p
+                          (need-bindable sup-p "Supplied-p parameter name"))
+                        (cond
+                          ((or (neq what-kind '&key) (not (consp var)))
+                           (need-bindable var var-label))
+                          ((not (proper-list-of-length-p var 2))
+                           (croak "Malformed ~A: ~S" var-label var))
+                          (t
                            (destructuring-bind (keyword-name var) var
                              (unless (symbolp keyword-name)
-                               (croak "keyword-name in ~S is not a symbol" arg))
-                             (need-bindable var description))
-                           (need-bindable var description))
-                       ;; Inform the user about a possibly malformed
-                       ;; destructuring list (&OPTIONAL (A &OPTIONAL B)).
-                       ;; It's technically legal but unlikely to be right,
-                       ;; as A's default form is the symbol &OPTIONAL,
-                       ;; which is an unlikely name for a local variable,
-                       ;; and an illegal name for a DEFVAR or such,
-                       ;; being in the CL package.
-                       (unless silent
-                         (check-suspicious "default" default)
-                         (check-suspicious "supplied-p variable" sup-p)))))))
-          (scan-opt/key optional '&optional "&OPTIONAL parameter name")
+                               (croak "Keyword-name in ~S is not a symbol" arg))
+                             (need-bindable var var-label))))
+                        ;; Inform the user about a possibly malformed
+                        ;; destructuring list (&OPTIONAL (A &OPTIONAL B)).
+                        ;; It's technically legal but unlikely to be right,
+                        ;; as A's default form is the symbol &OPTIONAL,
+                        ;; which is an unlikely name for a local variable,
+                        ;; and an illegal name for a DEFVAR or such,
+                        ;; being in the CL package.
+                        (unless silent
+                          (check-suspicious "default" default)
+                          (check-suspicious "supplied-p variable" sup-p))))))))
+          (scan-opt/key optional '&optional
+                        "&OPTIONAL parameter" "&OPTIONAL parameter name")
           (when rest
             (need-bindable (car rest) "&REST argument"))
-          (scan-opt/key keys '&key "&KEY parameter name")
+          (scan-opt/key keys '&key "&KEY parameter" "&KEY parameter name")
           (dolist (arg aux)
-            (when (defaultp arg '&aux)
-              ;; FIXME: also potentially compiler-crash-inducing
-              (destructuring-bind (var &optional init-form) arg
-                (declare (ignore init-form))
-                ;; &AUX is not destructured
-                (need-symbol var "&AUX parameter name"))))))
+            (cond
+              ((not (defaultp arg '&aux)))
+              ((not (proper-list-of-length-p arg 1 2))
+               (croak "Malformed &AUX parameter: ~S" arg))
+              (t
+               ;; &AUX is not destructured
+               (need-symbol (first arg) "&AUX parameter name"))))))
 
-    ;; Voila.
+      ;; Voila.
       (values (logior seen (if (oddp rest-bits) (bits &body) 0))
               required optional (or rest more) keys aux env whole))))
 
