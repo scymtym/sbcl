@@ -1,17 +1,9 @@
+(cl:in-package "RUN-TESTS")
+
 (defvar *no-color*
   (member "--no-color" *posix-argv* :test #'equal))
 
 (defvar *color-error* nil)
-
-(unless *no-color*
-  (let ((file #-win32 "colorize-control-codes.lisp"
-              #+win32 "colorize-windows-console.lisp"))
-    (handler-case (load file)
-      (error (c)
-        (setf *color-error*
-              (format nil "Error while loading ~a:~% ~a"
-                      (enough-namestring file)
-                      c))))))
 
 (defun is-tty ()
   (let* ((stream (sb-impl::stream-output-stream  *standard-output*))

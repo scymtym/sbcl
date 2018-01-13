@@ -1,3 +1,5 @@
+(cl:in-package "RUN-TESTS")
+
 (defun ascii-color (color)
   (ecase color
     (:red 31)

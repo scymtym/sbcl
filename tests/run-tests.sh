@@ -48,9 +48,12 @@ tenfour () {
     fi
 }
 set +u
-run_sbcl \
-    --eval '(with-compilation-unit () (load "run-tests.lisp"))' \
-    --eval '(run-tests::run-all)' $*
+run_sbcl                                                                        \
+    --eval '(require "asdf")'                                                   \
+    --eval '(asdf:initialize-source-registry
+              (quote (:source-registry :ignore-inherited-configuration)))'      \
+    --eval '(require "sb-test")'                                                \
+    --eval '(run-tests:run-all)' $*
 
 tenfour $?
 

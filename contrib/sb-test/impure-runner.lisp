@@ -1,19 +1,6 @@
-(with-compilation-unit ()
-  (load "test-util")
-  (load "assertoid"))
+(cl:in-package :run-tests)
 
-(defpackage :run-tests
-  (:use :cl :test-util :sb-ext))
-
-(in-package :cl-user)
-(use-package :test-util)
-(use-package :assertoid)
-
-(in-package :run-tests)
-
-(defvar *break-on-error*)
-
-(load "test-funs")
+(defvar *break-on-error*) ; TODO duplicated in run-tests
 
 (defun run (file test-fun
             break-on-failure break-on-expected-failure break-on-error

@@ -1,20 +1,9 @@
-(load "test-util.lisp")
-
-(defpackage :run-tests
-    (:use :cl :test-util :sb-ext))
-
-(load "assertoid.lisp")
-
-(in-package run-tests)
-
-(load "colorize.lisp")
+(cl:in-package "RUN-TESTS")
 
 (defvar *all-failures* nil)
 (defvar *break-on-error* nil)
 (defvar *report-skipped-tests* nil)
 (defvar *explicit-test-files* nil)
-
-(load "test-funs")
 
 (defun run-all ()
   (loop :with remainder = (rest *posix-argv*)
@@ -117,26 +106,33 @@
           (skip-file ())))
       (append-failures))))
 
-(defun run-in-child-sbcl (load eval)
+(defun run-in-child-sbcl (&rest evals)
   (process-exit-code
    (sb-ext:run-program
     (first *POSIX-ARGV*)
-    (list "--core" SB-INT:*CORE-STRING*
+    (list* "--core" SB-INT:*CORE-STRING*
            "--noinform"
            "--no-sysinit"
            "--no-userinit"
            "--noprint"
            "--disable-debugger"
-           "--load" load
-           "--eval" (write-to-string eval
-                                     :right-margin 1000))
+           (loop for eval in evals
+              collect "--eval"
+              collect (write-to-string eval :right-margin 1000)))
     :output t
     :input t)))
 
 (defun run-impure-in-child-sbcl (test-file test-fun)
   (clear-test-status)
   (run-in-child-sbcl
-   "impure-runner"
+   '(cl:require "asdf")
+   '(asdf:initialize-source-registry '(:source-registry :ignore-inherited-configuration))
+   '(cl:require "sb-test")
+
+   '(cl:in-package "CL-USER")
+   '(cl:use-package "TEST-UTIL")
+   '(cl:use-package "ASSERTOID")
+
    `(run-tests::run
      ,(enough-namestring test-file)
      ',test-fun

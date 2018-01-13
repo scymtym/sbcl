@@ -11,19 +11,7 @@
 ;;;; absolutely no warranty. See the COPYING and CREDITS files for
 ;;;; more information.
 
-(defpackage :compiler-test-util
-  (:nicknames :ctu)
-  (:use :cl :sb-c :sb-kernel)
-  (:export #:assert-consing
-           #:assert-no-consing
-           #:compiler-derived-type
-           #:count-full-calls
-           #:find-code-constants
-           #:find-named-callees
-           #:find-anonymous-callees
-           #:file-compile))
-
-(cl:in-package :ctu)
+(cl:in-package "COMPILER-TEST-UTIL")
 
 (unless (fboundp 'compiler-derived-type)
   (defknown compiler-derived-type (t) (values t t) (flushable))

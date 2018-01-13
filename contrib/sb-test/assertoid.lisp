@@ -12,14 +12,6 @@
 ;;;; absolutely no warranty. See the COPYING and CREDITS files for
 ;;;; more information.
 
-(cl:defpackage "ASSERTOID"
-  (:use "CL")
-  (:export "GRAB-CONDITION" "ASSERT-ERROR"
-           "HAS-ERROR?" "IS" "ASSERTOID"
-           "ASSERT-SIGNAL" "ASSERT-NO-SIGNAL"
-           "LEGACY-EVAL-P"
-           "EQUAL-MOD-GENSYMS" "CHECK-FUNCTION-EVALUATION-ORDER"))
-
 (cl:in-package "ASSERTOID")
 
 (defmacro grab-condition (&body body)

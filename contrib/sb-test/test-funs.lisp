@@ -1,3 +1,5 @@
+(cl:in-package "RUN-TESTS")
+
 (defvar *test-evaluator-mode* :compile)
 
 (defun clear-test-status ()

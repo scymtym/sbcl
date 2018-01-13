@@ -1,24 +1,4 @@
-(defpackage :test-util
-  (:use :cl :sb-ext)
-  (:export #:with-test #:report-test-status #:*failures*
-           #:really-invoke-debugger
-           #:*break-on-failure* #:*break-on-expected-failure*
-
-           ;; thread tools
-           #:make-kill-thread #:make-join-thread
-
-           ;; MAP-OPTIMIZATION-*
-           #:map-optimization-quality-combinations
-           #:map-optimize-declarations
-
-           ;; CHECKED-COMPILE and friends
-           #:checked-compile #:checked-compile-and-assert
-           #:checked-compile-capturing-source-paths
-           #:checked-compile-condition-source-paths
-
-           #:runtime #:split-string #:shuffle))
-
-(in-package :test-util)
+(cl:in-package "TEST-UTIL")
 
 (defvar *test-count* 0)
 (defvar *test-file* nil)
@@ -28,9 +8,6 @@
 
 (defvar *threads-to-kill*)
 (defvar *threads-to-join*)
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (require :sb-posix))
 
 (sb-posix:putenv (format nil "SBCL_MACHINE_TYPE=~A" (machine-type)))
 (sb-posix:putenv (format nil "SBCL_SOFTWARE_TYPE=~A" (software-type)))
