@@ -17,7 +17,7 @@
 ;;; compute-applicable-methods-using-classes.
 
 (defpackage "OR-SPECIALIZER-TEST"
-  (:use "CL" "SB-MOP" "ASSERTOID"))
+  (:use "CL" "SB-MOP" "TEST-UTIL"))
 
 (in-package "OR-SPECIALIZER-TEST")
 

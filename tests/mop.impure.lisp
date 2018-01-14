@@ -16,7 +16,7 @@
 ;;;; no regressions.
 
 (defpackage "MOP-TEST"
-  (:use "CL" "SB-MOP" "ASSERTOID" "TEST-UTIL"))
+  (:use "CL" "SB-MOP" "TEST-UTIL"))
 
 (in-package "MOP-TEST")
 

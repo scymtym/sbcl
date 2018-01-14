@@ -14,7 +14,7 @@
 ;;;; more information.
 
 (defpackage :seq-test
-  (:use :cl :assertoid :test-util))
+  (:use :cl :test-util))
 
 (in-package :seq-test)
 

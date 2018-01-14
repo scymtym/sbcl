@@ -1,5 +1,4 @@
-;;;; the ASSERTOID macro, asserting something with added generality
-;;;; to help in regression tests
+;;;; Macros for assertions in tests.
 
 ;;;; This software is part of the SBCL system. See the README file for
 ;;;; more information.
@@ -12,7 +11,7 @@
 ;;;; absolutely no warranty. See the COPYING and CREDITS files for
 ;;;; more information.
 
-(cl:in-package "ASSERTOID")
+(cl:in-package "TEST-UTIL")
 
 (defmacro grab-condition (&body body)
   `(nth-value 1

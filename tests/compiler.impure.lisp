@@ -1743,7 +1743,7 @@
     x))
 
 (test-util:with-test (:name (:compiler :constraint-propagation :cast))
-  (assertoid:assert-error
+  (test-util:assert-error
    (test-constraint-propagation/cast 1) type-error))
 
 ;;; bug #399
@@ -1971,7 +1971,7 @@
       (g367-i367s z))))
 (defun r367 (x y) (declare (ignore x y)) nil)
 (defun h367 (x) (declare (ignore x)) (values))
-(assertoid:assert-error (frob-367 0 (make-e367)) type-error)
+(test-util:assert-error (frob-367 0 (make-e367)) type-error)
 
 (handler-case
     (delete-file (compile-file "circ-tree-test.lisp"))
@@ -1993,11 +1993,11 @@
                                     (list &whole x))
                                  :allow-failure t)
     (assert failure-p)
-    (assertoid:assert-error (funcall fun) program-error)))
+    (test-util:assert-error (funcall fun) program-error)))
 
 (test-util:with-test (:name (eval :bad lambda-list keyword program-error)
                       :skipped-on (not :sb-eval))
-  (assertoid:assert-error (let ((*evaluator-mode* :interpret))
+  (test-util:assert-error (let ((*evaluator-mode* :interpret))
                             (funcall (eval '(lambda (&whole x)
                                              (list &whole x)))))
                           program-error))

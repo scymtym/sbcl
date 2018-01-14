@@ -129,9 +129,8 @@
    '(asdf:initialize-source-registry '(:source-registry :ignore-inherited-configuration))
    '(cl:require "sb-test")
 
-   '(cl:in-package "CL-USER")
+   '(cl:in-package "CL-USER") ; TODO (setup-cl-user)
    '(cl:use-package "TEST-UTIL")
-   '(cl:use-package "ASSERTOID")
 
    `(run-tests::run
      ,(enough-namestring test-file)
@@ -178,8 +177,7 @@
              *all-failures*))
 
 (defun setup-cl-user ()
-  (use-package :test-util)
-  (use-package :assertoid))
+  (use-package "TEST-UTIL"))
 
 (defun filter-test-files (wild-mask)
   (if *explicit-test-files*

@@ -1,19 +1,3 @@
-(cl:defpackage "ASSERTOID"
-  (:use "CL")
-  (:export
-   #:grab-condition
-   #:assert-error
-
-   #:has-error?
-   #:is
-   #:assertoid
-   #:assert-signal
-   #:assert-no-signal
-
-   #:legacy-eval-P
-   #:equal-mod-gensyms
-   #:check-function-evaluation-order))
-
 (cl:defpackage "TEST-UTIL"
   (:use "CL" "SB-EXT")
   (:export
@@ -33,7 +17,21 @@
    #:checked-compile-capturing-source-paths
    #:checked-compile-condition-source-paths
 
-   #:runtime #:split-string #:shuffle))
+   #:runtime #:split-string #:shuffle
+
+   ;; assertions
+   #:grab-condition
+   #:assert-error
+
+   #:has-error?
+   #:is
+   #:assertoid
+   #:assert-signal
+   #:assert-no-signal
+
+   #:legacy-eval-P
+   #:equal-mod-gensyms
+   #:check-function-evaluation-order))
 
 (cl:defpackage "COMPILER-TEST-UTIL"
   (:nicknames "CTU")

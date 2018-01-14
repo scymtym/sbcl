@@ -12,7 +12,7 @@
 ;;;; more information.
 
 (cl:defpackage #:thread-test
-  (:use #:cl #:sb-thread #:sb-ext #:test-util #:assertoid))
+  (:use #:cl #:sb-thread #:sb-ext #:test-util))
 
 (cl:in-package #:thread-test)
 

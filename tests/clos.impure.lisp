@@ -14,7 +14,7 @@
 #+interpreter (sb-ext:exit :code 104)
 
 (defpackage "CLOS-IMPURE"
-  (:use "CL" "SB-EXT" "ASSERTOID" "TEST-UTIL" "COMPILER-TEST-UTIL"))
+  (:use "CL" "SB-EXT" "TEST-UTIL" "COMPILER-TEST-UTIL"))
 (in-package "CLOS-IMPURE")
 
 ;;; It should be possible to do DEFGENERIC and DEFMETHOD referring to

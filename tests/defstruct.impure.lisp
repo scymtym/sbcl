@@ -674,7 +674,7 @@
 
 
 ;;; bug 3d: type safety with redefined type constraints on slots
-#+#.(cl:if (assertoid:legacy-eval-p) '(or) '(and))
+#+#.(cl:if (test-util:legacy-eval-p) '(or) '(and))
 (macrolet
     ((test (type)
        (let* ((base-name (intern (format nil "bug3d-~A" type)))
