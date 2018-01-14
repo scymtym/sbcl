@@ -13,10 +13,6 @@
 
 (in-package :cl-user)
 
-(load "assertoid.lisp")
-(load "compiler-test-util.lisp")
-(use-package "ASSERTOID")
-
 ;;;; Our little labrats and a few utilities
 
 (defpackage :test-used)

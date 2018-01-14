@@ -13,7 +13,6 @@
 
 #+interpreter (sb-ext:exit :code 104)
 
-(load "compiler-test-util.lisp")
 (defpackage "CLOS-IMPURE"
   (:use "CL" "SB-EXT" "ASSERTOID" "TEST-UTIL" "COMPILER-TEST-UTIL"))
 (in-package "CLOS-IMPURE")

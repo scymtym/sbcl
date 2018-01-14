@@ -14,11 +14,9 @@
 
 ;;;; WHITE-BOX TESTS
 
-(shadowing-import 'assertoid:assert-error)
-(use-package :sb-thread)
-(use-package :sb-sys)
-(use-package '#:test-util)
-(use-package '#:assertoid)
+(shadowing-import 'test-util:assert-error)
+(use-package "SB-THREAD")
+(use-package "SB-SYS")
 
 (setf sb-unix::*on-dangerous-wait* :error)
 
@@ -1358,9 +1356,6 @@
 ;;;; BLACK BOX TESTS
 
 (in-package :cl-user)
-(use-package :test-util)
-(use-package "ASSERTOID")
-
 
 (with-test (:name (:parallel defclass))
   (write-line "WARNING, WILL HANG ON FAILURE!")

@@ -1,9 +1,3 @@
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (load "assertoid.lisp")
-  (load "compiler-test-util.lisp")
-  (load "test-util.lisp")
-  (use-package "ASSERTOID"))
-
 ;;; bug 254: compiler falure
 (defpackage :bug254 (:use :cl))
 (in-package :bug254)

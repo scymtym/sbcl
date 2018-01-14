@@ -14,11 +14,6 @@
 ;;;; absolutely no warranty. See the COPYING and CREDITS files for
 ;;;; more information.
 
-(load "assertoid.lisp")
-(use-package "ASSERTOID")
-
-(load "test-util.lisp")
-(use-package "TEST-UTIL")
 
 ;;;; Pathname accessors
 

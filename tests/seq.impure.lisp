@@ -13,9 +13,6 @@
 ;;;; absolutely no warranty. See the COPYING and CREDITS files for
 ;;;; more information.
 
-(load "test-util.lisp")
-(load "assertoid.lisp")
-
 (defpackage :seq-test
   (:use :cl :assertoid :test-util))
 

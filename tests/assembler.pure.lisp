@@ -11,10 +11,9 @@
 ;;;; absolutely no warranty. See the COPYING and CREDITS files for
 ;;;; more information.
 
-(in-package sb-vm)
-
-(load "test-util.lisp")
-(use-package :test-util)
+(cl:in-package "SB-VM")
+(shadowing-import '(test-util:assert-error))
+(use-package "TEST-UTIL")
 
 ;; this is architecture-agnostic
 (defun test-assemble (inst expect)

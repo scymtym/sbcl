@@ -9,8 +9,6 @@
 ;;;; absolutely no warranty. See the COPYING and CREDITS files for
 ;;;; more information.
 
-(load "compiler-test-util.lisp")
-(use-package "ASSERTOID")
 
 ;;;; examples from, or close to, the Common Lisp DEFSTRUCT spec
 

@@ -13,10 +13,8 @@
 
 ;;; clos.impure.lisp was getting too big and confusing
 
-(load "assertoid.lisp")
-
 (cl:defpackage "CLOS-1"
-  (:use "CL" "ASSERTOID" "TEST-UTIL"))
+  (:use "CL" "TEST-UTIL"))
 (cl:in-package "CLOS-1")
 
 ;;; tests that various optimization paths for slot-valuish things

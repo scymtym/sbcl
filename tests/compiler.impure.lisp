@@ -15,18 +15,12 @@
 ;;;; absolutely no warranty. See the COPYING and CREDITS files for
 ;;;; more information.
 
-(in-package :cl-user)
-
 ;; The tests in this file do not work under the legacy interpreter.
 ;; They mostly do work in the fast interpreter, and are either harmless
 ;; or actually reasonable things to test.
 (when (and (eq sb-ext:*evaluator-mode* :interpret)
            (not (member :sb-fasteval *features*)))
   (sb-ext:exit :code 104))
-
-(load "compiler-test-util.lisp")
-(use-package "TEST-UTIL")
-(use-package "ASSERTOID")
 
 ;;; Old CMU CL code assumed that the names of "keyword" arguments are
 ;;; necessarily self-evaluating symbols, but ANSI Common Lisp allows
