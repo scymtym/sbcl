@@ -38,11 +38,12 @@
 (defun set-color (color)
   (set-console-text-attribute (output-handle) color))
 
-(defun %output-colored-text (text color &key bold)
+(defun %call-with-colored-output (thunk stream color bold)
   (declare (ignore bold))
   (let ((current-attributes (get-attributes)))
     (unwind-protect
-         (progn (set-color (console-color color))
-                (write-string text)
-                (finish-output))
+         (progn
+           (set-color (console-color color))
+           (funcall thunk stream)
+           (finish-output))
       (set-color current-attributes))))

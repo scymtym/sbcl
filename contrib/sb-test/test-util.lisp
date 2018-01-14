@@ -126,11 +126,12 @@
       (invoke-debugger condition))))
 
 (defun fail-test (type test-name condition)
-  (if (stringp condition)
-      (log-msg "~@<~A ~S ~:_~A~:>"
-               type test-name condition)
-      (log-msg "~@<~A ~S ~:_due to ~S: ~4I~:_\"~A\"~:>"
-               type test-name (type-of condition) condition))
+  (with-colored-output (*trace-output* :red)
+    (if (stringp condition)
+        (log-msg "~@<~A ~S ~:_~A~:>"
+                 type test-name condition)
+        (log-msg "~@<~A ~S ~:_due to ~S: ~4I~:_\"~A\"~:>"
+                 type test-name (type-of condition) condition)))
   (push (list type *test-file* (or test-name *test-count*))
         *failures*)
   (unless (stringp condition)
