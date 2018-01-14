@@ -18,6 +18,8 @@
 
    (:file "test-funs")
 
+   (:file "report")
+
    (:file "impure-runner")
    (:file "run-tests"))
   :perform (load-op :after (o c) (provide 'sb-test))

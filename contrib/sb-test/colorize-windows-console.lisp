@@ -1,4 +1,4 @@
-(cl:in-package "RUN-TESTS")
+(cl:in-package "TEST-UTIL")
 
 (defun output-handle ()
   (sb-win32::get-std-handle-or-null

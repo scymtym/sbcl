@@ -1,4 +1,4 @@
-(cl:in-package "RUN-TESTS")
+(cl:in-package "TEST-UTIL")
 
 (defun ascii-color (color)
   (ecase color

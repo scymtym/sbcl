@@ -1,4 +1,4 @@
-(cl:in-package "RUN-TESTS")
+(cl:in-package "TEST-UTIL")
 
 (defvar *no-color*
   (member "--no-color" *posix-argv* :test #'equal))

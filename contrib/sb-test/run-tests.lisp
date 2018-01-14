@@ -37,54 +37,10 @@
   (impure-runner (impure-load-files) 'load-test)
   (impure-runner (impure-cload-files) 'cload-test)
   #-win32 (impure-runner (sh-files) 'sh-test)
-  (report)
+  (test-util::report *all-failures* :report-skipped-tests *report-skipped-tests*)
   (sb-ext:exit :code (if (unexpected-failures)
                          1
                          104)))
-
-(defun report ()
-  (terpri)
-  (format t "Finished running tests.~%")
-  (let ((skipcount 0)
-        (*print-pretty* nil))
-    (cond (*all-failures*
-           (format t "Status:~%")
-           (dolist (fail (reverse *all-failures*))
-             (cond ((eq (car fail) :unhandled-error)
-                    (output-colored-text (car fail)
-                                          " Unhandled Error")
-                    (format t " ~a~%"
-                            (enough-namestring (second fail))))
-                   ((eq (car fail) :invalid-exit-status)
-                    (output-colored-text (car fail)
-                                          " Invalid exit status:")
-                    (format t " ~a~%"
-                            (enough-namestring (second fail))))
-                   ((eq (car fail) :skipped-disabled)
-                    (when *report-skipped-tests*
-                      (format t " ~20a ~a / ~a~%"
-                              "Skipped (irrelevant):"
-                              (enough-namestring (second fail))
-                              (third fail)))
-                    (incf skipcount))
-                   (t
-                    (output-colored-text
-                     (first fail)
-                     (ecase (first fail)
-                       (:expected-failure " Expected failure:")
-                       (:unexpected-failure " Failure:")
-                       (:leftover-thread " Leftover thread (broken):")
-                       (:unexpected-success " Unexpected success:")
-                       (:skipped-broken " Skipped (broken):")
-                       (:skipped-disabled " Skipped (irrelevant):")))
-                    (format t " ~a / ~a~%"
-                            (enough-namestring (second fail))
-                            (third fail)))))
-           (when (> skipcount 0)
-             (format t " (~a tests skipped for this combination of platform and features)~%"
-                     skipcount)))
-          (t
-           (format t "All tests succeeded~%")))))
 
 (defun pure-runner (files test-fun)
   (when files
