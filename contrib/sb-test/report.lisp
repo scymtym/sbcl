@@ -34,48 +34,57 @@
                          :reader   report-skipped-tests
                          :initform t)))
 
+(defun failure-info (failure)
+  (ecase (car failure)
+    (:unhandled-error
+     (values "Unhandled Error" '(:red :bold t)))
+    (:invalid-exit-status
+     (values "Invalid exit status" '(:red :bold t)))
+    (:unexpected-failure
+     (values "Failure:" '(:red :bold t)))
+    (:leftover-thread
+     (values "Leftover thread (broken):" '(:red :bold t)))
+    (:unexpected-success
+     (values "Unexpected success:" '(:green)))
+    (:expected-failure
+     "Expected failure:")
+    (:skipped-broken
+     "Skipped (broken):")
+    (:skipped-disabled
+     "Skipped (irrelevant):")))
+
 (defmethod report-using-style
     ((results t) (style style-describe) (target stream))
   (terpri target)
   (format target "Finished running tests.~%")
   (let ((all-failures results)
-        (skipcount 0)
+        (skip-count 0)
         (*print-pretty* nil))
     (cond (all-failures
            (format target "Status:~%")
            (dolist (fail (reverse all-failures))
-             (cond ((eq (car fail) :unhandled-error)
-                    (output-colored-text (car fail)
-                                         " Unhandled Error")
-                    (format target " ~a~%"
-                            (enough-namestring (second fail))))
-                   ((eq (car fail) :invalid-exit-status)
-                    (output-colored-text (car fail)
-                                         " Invalid exit status:")
-                    (format target " ~a~%"
-                            (enough-namestring (second fail))))
-                   ((eq (car fail) :skipped-disabled)
-                    (when (report-skipped-tests style)
-                      (format target " ~20a ~a / ~a~%"
-                              "Skipped (irrelevant):"
-                              (enough-namestring (second fail))
-                              (third fail)))
-                    (incf skipcount))
-                   (t
-                    (output-colored-text
-                     (first fail)
-                     (ecase (first fail)
-                       (:expected-failure " Expected failure:")
-                       (:unexpected-failure " Failure:")
-                       (:leftover-thread " Leftover thread (broken):")
-                       (:unexpected-success " Unexpected success:")
-                       (:skipped-broken " Skipped (broken):")
-                       (:skipped-disabled " Skipped (irrelevant):")))
-                    (format target " ~a / ~a~%"
-                            (enough-namestring (second fail))
-                            (third fail)))))
-           (when (> skipcount 0)
-             (format target " (~a tests skipped for this combination of platform and features)~%"
-                     skipcount)))
+             (let ((kind (car fail)))
+               (multiple-value-bind (label color) (failure-info fail)
+                 (labels ((label (stream)
+                            (format stream "~26@< ~A~>" label))
+                          (output ()
+                            (if color
+                                (apply #'call-with-colored-output
+                                       #'label target color)
+                                (label target))
+                            (format target " ~A~@[ / ~A~]~%"
+                                    (enough-namestring (second fail))
+                                    (third fail))))
+                   (case kind
+                     (:skipped-disabled
+                      (when (report-skipped-tests style)
+                        (output))
+                      (incf skip-count))
+                     (t
+                      (output)))))))
+           (when (> skip-count 0)
+             (format target " (~a tests skipped for this combination ~
+                             of platform and features)~%"
+                     skip-count)))
           (t
            (format target "All tests succeeded~%")))))

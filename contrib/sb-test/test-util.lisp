@@ -126,12 +126,19 @@
       (invoke-debugger condition))))
 
 (defun fail-test (type test-name condition)
-  (with-colored-output (*trace-output* :red)
-    (if (stringp condition)
-        (log-msg "~@<~A ~S ~:_~A~:>"
-                 type test-name condition)
-        (log-msg "~@<~A ~S ~:_due to ~S: ~4I~:_\"~A\"~:>"
-                 type test-name (type-of condition) condition)))
+  (flet ((log-it ()
+           (if (stringp condition)
+               (log-msg "~@<~A ~S ~:_~A~:>"
+                        type test-name condition)
+               (log-msg "~@<~A ~S ~:_due to ~S: ~4I~:_\"~A\"~:>"
+                        type test-name (type-of condition) condition))))
+    (case type
+      ((:unhandled-error :invalid-exit-status :unexpected-failure
+        :leftover-thread)
+       (with-colored-output (*trace-output* :red)
+         (log-it)))
+      (t
+       (log-it))))
   (push (list type *test-file* (or test-name *test-count*))
         *failures*)
   (unless (stringp condition)
