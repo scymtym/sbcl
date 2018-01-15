@@ -29,6 +29,6 @@
     (let ((process (sb-ext:run-program "/bin/sh"
                                        (list (native-namestring file))
                                        :output *error-output*)))
-      (let ((*failures* nil))
+      (let ((test-util::*results* nil))
         (test-util:report-test-status))
       (sb-ext:exit :code (process-exit-code process)))))

@@ -34,57 +34,67 @@
                          :reader   report-skipped-tests
                          :initform t)))
 
-(defun failure-info (failure)
-  (ecase (car failure)
-    (:unhandled-error
+(defun failure-info (result)
+  (typecase result
+    (unhandled-error
      (values "Unhandled Error" '(:red :bold t)))
-    (:invalid-exit-status
+    (invalid-exit-status
      (values "Invalid exit status" '(:red :bold t)))
-    (:unexpected-failure
+    (unexpected-failure
      (values "Failure:" '(:red :bold t)))
-    (:leftover-thread
+    (leftover-threads
      (values "Leftover thread (broken):" '(:red :bold t)))
-    (:unexpected-success
+    (unexpected-success
      (values "Unexpected success:" '(:green)))
-    (:expected-failure
+    (expected-failure
      "Expected failure:")
-    (:skipped-broken
+    (skipped-broken
      "Skipped (broken):")
-    (:skipped-disabled
+    (skipped-disabled
      "Skipped (irrelevant):")))
 
 (defmethod report-using-style
     ((results t) (style style-describe) (target stream))
   (terpri target)
   (format target "Finished running tests.~%")
-  (let ((all-failures results)
+  (let ((all-failures (remove-if #'success-p results))
         (skip-count 0)
         (*print-pretty* nil))
     (cond (all-failures
            (format target "Status:~%")
-           (dolist (fail (reverse all-failures))
-             (let ((kind (car fail)))
-               (multiple-value-bind (label color) (failure-info fail)
-                 (labels ((label (stream)
-                            (format stream "~26@< ~A~>" label))
-                          (output ()
-                            (if color
-                                (apply #'call-with-colored-output
-                                       #'label target color)
-                                (label target))
-                            (format target " ~A~@[ / ~A~]~%"
-                                    (enough-namestring (second fail))
-                                    (third fail))))
-                   (case kind
-                     (:skipped-disabled
-                      (when (report-skipped-tests style)
-                        (output))
-                      (incf skip-count))
-                     (t
-                      (output)))))))
+           (dolist (result (reverse all-failures))
+             (multiple-value-bind (label color) (failure-info result)
+               (labels ((label (stream)
+                          (format stream "~26@< ~A~>" label))
+                        (output ()
+                          (if color
+                              (apply #'call-with-colored-output
+                                     #'label target color)
+                              (label target))
+                          (format target " ~A~@[ / ~A~]~%"
+                                  (enough-namestring (test-status-file result))
+                                  (test-status-name result))))
+                 (typecase result
+                   (skipped-disabled
+                    (when (report-skipped-tests style)
+                      (output))
+                    (incf skip-count))
+                   (t
+                    (output))))))
            (when (> skip-count 0)
              (format target " (~a tests skipped for this combination ~
                              of platform and features)~%"
                      skip-count)))
           (t
            (format target "All tests succeeded~%")))))
+
+(defmethod report-using-style :after
+    ((results t) (style style-describe) (target stream))
+  (format target "Slowest tests:~%")
+  (loop repeat 10
+     for result in (sort (remove-if-not #'duration results)
+                         #'> :key #'duration)
+     do (format target " ~,3F s ~A~@[ / ~A~]~%"
+                (duration result)
+                (enough-namestring (test-status-file result))
+                (test-status-name result))))

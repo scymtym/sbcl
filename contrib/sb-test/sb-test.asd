@@ -12,6 +12,8 @@
    (:file "colorize-windows-console" :if-feature :win32)
    (:file "colorize")
 
+   (:file "result")
+
    (:file "assertoid")
    (:file "test-util")
    (:file "compiler-test-util")

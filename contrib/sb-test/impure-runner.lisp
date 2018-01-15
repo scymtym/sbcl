@@ -13,12 +13,13 @@
     (push :interpreter *features*))
   (setf sb-ext:*evaluator-mode* *test-evaluator-mode*)
   (format t "// Running ~a in ~a evaluator mode~%"
-          file *evaluator-mode*)
+          (enough-namestring file) *evaluator-mode*)
   (restart-case
       (handler-bind
           ((error (lambda (condition)
-                    (push (list :unhandled-error file)
-                          *failures*)
+                    (push (test-util::unhandled-error file 'dummy 0 (let ((*print-readably* nil))
+                                                                      (princ-to-string condition)))
+                          test-util::*results*)
                     (cond (*break-on-error*
                            (test-util:really-invoke-debugger condition))
                           (t
@@ -29,6 +30,6 @@
         (let ((*package* (find-package :cl-user)))
           (funcall test-fun file)))
     (skip-file ()
-      (format t ">>>~a<<<~%"*failures*)))
+      (format t ">>>~a<<<~%" test-util::*results*)))
   (report-test-status)
   (exit :code 104))

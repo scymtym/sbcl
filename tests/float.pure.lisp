@@ -50,7 +50,7 @@
 (with-test (:name (float-radix simple-type-error))
   (multiple-value-bind  (fun failure-p warnings)
       (checked-compile '(lambda () (float-radix "notfloat")) :allow-warnings t)
-    (assert failure-p)
+    (assert (not failure-p))
     (assert (= 1 (length warnings)))
     (assert-error (funcall fun) type-error))
   (assert-error (funcall (fdefinition 'float-radix) "notfloat") type-error))

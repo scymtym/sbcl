@@ -2,7 +2,7 @@
 
 (defvar *test-count* 0)
 (defvar *test-file* nil)
-(defvar *failures* nil)
+(defvar *results* nil)
 (defvar *break-on-failure* nil)
 (defvar *break-on-expected-failure* nil)
 
@@ -37,13 +37,14 @@
 
 (defun run-test (test-function name fails-on)
   (start-test)
-  (let (#+sb-thread (threads (sb-thread:list-all-threads))
+  (let ((start-time (get-internal-real-time))
+        #+sb-thread (threads (sb-thread:list-all-threads))
         (*threads-to-join* nil)
         (*threads-to-kill* nil))
     (handler-bind ((error (lambda (error)
                             (if (expected-failure-p fails-on)
-                                (fail-test :expected-failure name error)
-                                (fail-test :unexpected-failure name error))
+                                (fail-test (expected-failure *test-file* name start-time (princ-to-string error))) ; TODO only for impure tests
+                                (fail-test (unexpected-failure *test-file* name start-time (princ-to-string error))))
                             (return-from run-test))))
       ;; Non-pretty is for cases like (with-test (:name (let ...)) ...
       (log-msg/non-pretty "Running ~S" name)
@@ -71,12 +72,14 @@
             #-win32
             (ignore-errors (sb-thread:terminate-thread thread))))
         (when any-leftover
-          (fail-test :leftover-thread name any-leftover)
+          (fail-test (leftover-threads *test-file* name start-time (list any-leftover)))
           (return-from run-test)))
       (if (expected-failure-p fails-on)
-          (fail-test :unexpected-success name nil)
+          (fail-test (unexpected-success *test-file* name start-time))
           ;; Non-pretty is for cases like (with-test (:name (let ...)) ...
-          (log-msg/non-pretty "Success ~S" name)))))
+          (progn
+            (push (success *test-file* name start-time) *results*)
+            (log-msg/non-pretty "Success ~S" name))))))
 
 (defmacro with-test ((&key fails-on broken-on skipped-on name)
                      &body body)
@@ -95,11 +98,11 @@
     ((broken-p broken-on)
      `(progn
         (start-test)
-        (fail-test :skipped-broken ',name "Test broken on this platform")))
+        (fail-test (skipped-broken *test-file* ',name))))
     ((skipped-p skipped-on)
      `(progn
         (start-test)
-        (fail-test :skipped-disabled ',name "Test disabled for this combination of platform and features")))
+        (fail-test (skipped-disabled *test-file* ',name))))
     (t
      `(run-test (lambda ()
                   ,@body)
@@ -111,7 +114,7 @@
       (with-open-file (stream "test-status.lisp-expr"
                               :direction :output
                               :if-exists :supersede)
-        (format stream "~s~%" *failures*))))
+        (format stream "~s~%" *results*))))
 
 (defun start-test ()
   (unless (eq *test-file* *load-pathname*)
@@ -125,27 +128,47 @@
       (enable-debugger)
       (invoke-debugger condition))))
 
-(defun fail-test (type test-name condition)
-  (flet ((log-it ()
-           (if (stringp condition)
-               (log-msg "~@<~A ~S ~:_~A~:>"
-                        type test-name condition)
-               (log-msg "~@<~A ~S ~:_due to ~S: ~4I~:_\"~A\"~:>"
-                        type test-name (type-of condition) condition))))
-    (case type
-      ((:unhandled-error :invalid-exit-status :unexpected-failure
-        :leftover-thread)
+(defun fail-test (result)
+  (push result *results*)
+
+  (flet ((log-it (&optional thing)
+           (let ((type (type-of result))
+                 (test-name (test-status-name result)))
+             (cond
+               ((not thing))
+               ((stringp thing)
+                (log-msg "~@<~A ~S ~:_~A~:>"
+                         type test-name thing))
+               (t
+                (log-msg "~@<~A ~S ~:_due to ~S: ~4I~:_\"~A\"~:>"
+                         type test-name (type-of thing) thing)))))
+         (maybe-break (condition &optional expected-failure)
+           (when (or (and *break-on-failure* (not expected-failure))
+                     *break-on-expected-failure*)
+             (really-invoke-debugger condition))))
+    (typecase result
+      (unhandled-error
+       (let ((condition (unhandled-error-condition result)))
+         (with-colored-output (*trace-output* :red)
+           (log-it condition))
+         (maybe-break condition)))
+      (invalid-exit-status
        (with-colored-output (*trace-output* :red)
-         (log-it)))
+         (log-it (invalid-exit-status-exit-status result))))
+      (unexpected-failure
+       (let ((condition (unexpected-failure-condition result)))
+         (with-colored-output (*trace-output* :red)
+           (log-it condition))
+         (maybe-break condition)))
+      (expected-failure
+       (let ((condition (expected-failure-condition result)))
+         (log-it condition)
+         (maybe-break condition t)))
+      (leftover-threads
+       (with-colored-output (*trace-output* :red)
+         (log-it (leftover-threads-threads result))))
       (t
-       (log-it))))
-  (push (list type *test-file* (or test-name *test-count*))
-        *failures*)
-  (unless (stringp condition)
-    (when (or (and *break-on-failure*
-                   (not (eq type :expected-failure)))
-              *break-on-expected-failure*)
-      (really-invoke-debugger condition))))
+       (log-it)))))
 
 (defun expected-failure-p (fails-on)
   (sb-impl::featurep fails-on))

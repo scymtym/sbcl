@@ -1,6 +1,6 @@
 (cl:in-package "RUN-TESTS")
 
-(defvar *all-failures* nil)
+(defvar *all-results* nil)
 (defvar *break-on-error* nil)
 (defvar *report-skipped-tests* nil)
 (defvar *explicit-test-files* nil)
@@ -37,7 +37,7 @@
   (impure-runner (impure-load-files) 'load-test)
   (impure-runner (impure-cload-files) 'cload-test)
   #-win32 (impure-runner (sh-files) 'sh-test)
-  (test-util::report *all-failures* :report-skipped-tests *report-skipped-tests*)
+  (test-util::report *all-results* :report-skipped-tests *report-skipped-tests*)
   (sb-ext:exit :code (if (unexpected-failures)
                          1
                          104)))
@@ -46,7 +46,7 @@
   (when files
     (format t "// Running pure tests (~a)~%" test-fun)
     (let ((*package* (find-package :cl-user))
-          (*failures* nil))
+          (test-util::*results* '()))
       (setup-cl-user)
       (dolist (file files)
         (format t "// Running ~a in ~a evaluator mode~%"
@@ -60,7 +60,7 @@
                            *features*)))
                 (funcall test-fun file)))
           (skip-file ())))
-      (append-failures))))
+      (append-results))))
 
 (defun run-in-child-sbcl (&rest evals)
   (process-exit-code
@@ -89,7 +89,7 @@
    '(cl:use-package "TEST-UTIL")
 
    `(run-tests::run
-     ,(enough-namestring test-file)
+     ,test-file
      ',test-fun
      ,*break-on-failure*
      ,*break-on-expected-failure*
@@ -106,13 +106,14 @@
             (with-open-file (stream "test-status.lisp-expr"
                                     :direction :input
                                     :if-does-not-exist :error)
-              (append-failures (read stream)))
-            (push (list :invalid-exit-status file)
-                  *all-failures*))))))
+              (append-results (read stream)))
+            (push (test-util::invalid-exit-status file 'TODO 0 exit-code)
+                  *all-results*))))))
 
 (defun make-error-handler (file)
   (lambda (condition)
-    (push (list :unhandled-error file) *failures*)
+    (push (test-util::unhandled-error file 'dummy 0 condition)
+          test-util::*results*)
     (cond (*break-on-error*
            (test-util:really-invoke-debugger condition))
           (t
@@ -121,16 +122,17 @@
            (sb-debug:print-backtrace)))
     (invoke-restart 'skip-file)))
 
-(defun append-failures (&optional (failures *failures*))
-  (setf *all-failures* (append failures *all-failures*)))
+(defun append-results (&optional (results test-util::*results*))
+  (setf *all-results* (append results *all-results*)))
 
 (defun unexpected-failures ()
-  (remove-if (lambda (x)
-               (or (eq (car x) :expected-failure)
-                   (eq (car x) :unexpected-success)
-                   (eq (car x) :skipped-broken)
-                   (eq (car x) :skipped-disabled)))
-             *all-failures*))
+  (remove-if (lambda (result)
+               (typep result '(or test-util::expected-failure
+                                  test-util::unexpected-success
+                                  test-util::skipped-broken
+                                  test-util::skipped-disabled
+                                  test-util::success)))
+             *all-results*))
 
 (defun setup-cl-user ()
   (use-package "TEST-UTIL"))
