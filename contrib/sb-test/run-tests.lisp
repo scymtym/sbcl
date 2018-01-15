@@ -44,20 +44,28 @@
 
 (defun pure-runner (files test-fun)
   (when files
-    (format t "// Running pure tests (~a)~%" test-fun)
+    (test-util::with-colored-output (*standard-output* :white :bold t)
+      (format *standard-output* "Running pure tests (~a)~%" test-fun))
     (let ((*package* (find-package :cl-user))
           (test-util::*results* '()))
       (setup-cl-user)
       (dolist (file files)
-        (format t "// Running ~a in ~a evaluator mode~%"
-                file *test-evaluator-mode*)
+
+        (format *standard-output* "Pure test ")
+        (test-util::with-colored-output (*standard-output* :magenta :bold t)
+          (write-string (enough-namestring file) *standard-output*))
+        (format *standard-output* ", ")
+        (test-util::with-colored-output (*standard-output* :white :bold t)
+          (princ *test-evaluator-mode* *standard-output*))
+        (format *standard-output* " evaluator mode~%")
+
         (restart-case
             (handler-bind ((error (make-error-handler file)))
               (let* ((sb-ext:*evaluator-mode* *test-evaluator-mode*)
                      (*features*
-                       (if (eq sb-ext:*evaluator-mode* :interpret)
-                           (cons :interpreter *features*)
-                           *features*)))
+                      (if (eq sb-ext:*evaluator-mode* :interpret)
+                          (cons :interpreter *features*)
+                          *features*)))
                 (funcall test-fun file)))
           (skip-file ())))
       (append-results))))
@@ -98,7 +106,8 @@
 
 (defun impure-runner (files test-fun)
   (when files
-    (format t "// Running impure tests (~a)~%" test-fun)
+    (test-util::with-colored-output (*standard-output* :white :bold t)
+      (format *standard-output* "Running impure tests (~a)~%" test-fun))
     (dolist (file files)
       (force-output)
       (let ((exit-code (run-impure-in-child-sbcl file test-fun)))

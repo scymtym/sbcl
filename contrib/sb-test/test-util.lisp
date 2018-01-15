@@ -36,7 +36,7 @@
     (apply #'log-msg args)))
 
 (defun run-test (test-function name fails-on)
-  (start-test)
+  (start-test name)
   (let ((start-time (get-internal-real-time))
         #+sb-thread (threads (sb-thread:list-all-threads))
         (*threads-to-join* nil)
@@ -46,8 +46,6 @@
                                 (fail-test (expected-failure *test-file* name start-time (princ-to-string error))) ; TODO only for impure tests
                                 (fail-test (unexpected-failure *test-file* name start-time (princ-to-string error))))
                             (return-from run-test))))
-      ;; Non-pretty is for cases like (with-test (:name (let ...)) ...
-      (log-msg/non-pretty "Running ~S" name)
       (funcall test-function)
       #+sb-thread
       (let ((any-leftover nil))
@@ -77,9 +75,34 @@
       (if (expected-failure-p fails-on)
           (fail-test (unexpected-success *test-file* name start-time))
           ;; Non-pretty is for cases like (with-test (:name (let ...)) ...
-          (progn
-            (push (success *test-file* name start-time) *results*)
-            (log-msg/non-pretty "Success ~S" name))))))
+          (let* ((result (success *test-file* name start-time))
+                 (duration (duration result))
+                 (stream *trace-output*))
+            (push result *results*)
+            (format stream "~60T")
+
+            (with-colored-output (stream :green :bold t)
+              (typecase (stream-external-format stream)
+                ((cons (eql :utf-8))
+                 (write-string "✓" stream))
+                (t
+                 (write-string "OK" stream))))
+            (format stream ", ")
+            (flet ((write-it (stream)
+                     (format stream "~,3F s" duration)))
+             (cond
+               ((< duration .01)
+                (write-it stream))
+               ((< duration 1)
+                (with-colored-output (stream :yellow)
+                  (write-it stream)))
+               ((< duration 10)
+                (with-colored-output (stream :yellow :bold t)
+                  (write-it stream)))
+               (t
+                (with-colored-output (stream :red :bold t)
+                  (write-it stream)))))
+            (terpri stream))))))
 
 (defmacro with-test ((&key fails-on broken-on skipped-on name)
                      &body body)
@@ -97,17 +120,14 @@
   (cond
     ((broken-p broken-on)
      `(progn
-        (start-test)
+        (start-test ',name)
         (fail-test (skipped-broken *test-file* ',name))))
     ((skipped-p skipped-on)
      `(progn
-        (start-test)
+        (start-test ',name)
         (fail-test (skipped-disabled *test-file* ',name))))
     (t
-     `(run-test (lambda ()
-                  ,@body)
-                ',name
-                ',fails-on))))
+     `(run-test (lambda () ,@body) ',name ',fails-on))))
 
 (defun report-test-status ()
   (with-standard-io-syntax
@@ -116,11 +136,15 @@
                               :if-exists :supersede)
         (format stream "~s~%" *results*))))
 
-(defun start-test ()
+(defun start-test (name)
   (unless (eq *test-file* *load-pathname*)
     (setf *test-file* *load-pathname*)
     (setf *test-count* 0))
-  (incf *test-count*))
+  (incf *test-count*)
+
+  (let ((*print-pretty* nil))
+    (format *trace-output* "  ~A " name))
+  (force-output *trace-output*))
 
 (defun really-invoke-debugger (condition)
   (with-simple-restart (continue "Continue")
@@ -131,17 +155,19 @@
 (defun fail-test (result)
   (push result *results*)
 
-  (flet ((log-it (&optional thing)
+  (flet ((log-it (stream &optional thing)
            (let ((type (type-of result))
                  (test-name (test-status-name result)))
-             (cond
-               ((not thing))
-               ((stringp thing)
-                (log-msg "~@<~A ~S ~:_~A~:>"
-                         type test-name thing))
-               (t
-                (log-msg "~@<~A ~S ~:_due to ~S: ~4I~:_\"~A\"~:>"
-                         type test-name (type-of thing) thing)))))
+             (let ((*print-pretty* nil))
+               (format stream "~60T~A" type))
+             (typecase thing
+               (string
+                (format stream "~%~4T~@<~A~:>"
+                        thing))
+               (condition
+                (format stream "~%~4T~@<due to ~S: ~4I~:_\"~A\"~:>"
+                        (type-of thing) thing))))
+           (terpri stream))
          (maybe-break (condition &optional expected-failure)
            (when (or (and *break-on-failure* (not expected-failure))
                      *break-on-expected-failure*)
@@ -150,27 +176,34 @@
       (unhandled-error
        (let ((condition (unhandled-error-condition result)))
          (with-colored-output (*trace-output* :red)
-           (log-it condition))
+           (log-it *trace-output* condition))
          (maybe-break condition)))
       (invalid-exit-status
        (with-colored-output (*trace-output* :red)
-         (log-it (invalid-exit-status-exit-status result))))
+         (log-it *trace-output* (invalid-exit-status-exit-status result))))
       (unexpected-failure
        (let ((condition (unexpected-failure-condition result)))
          (with-colored-output (*trace-output* :red)
-           (log-it condition))
+           (log-it *trace-output* condition))
          (maybe-break condition)))
       (expected-failure
        (let ((condition (expected-failure-condition result)))
-         (log-it condition)
+         (log-it *trace-output* condition)
          (maybe-break condition t)))
       (leftover-threads
        (with-colored-output (*trace-output* :red)
-         (log-it (leftover-threads-threads result))))
+         (log-it *trace-output* (leftover-threads-threads result))))
+      (skipped-disabled
+       (with-colored-output (*trace-output* :white)
+         (log-it *trace-output*)))
+      (skipped-broken
+       (with-colored-output (*trace-output* :yellow)
+         (log-it *trace-output*)))
       (t
-       (log-it)))))
+       (with-colored-output (*trace-output* :red)
+         (log-it *trace-output*))))))
 
-(defun expected-failure-p (fails-on)
+(defun expected-failure-p (fails-on) ; TODO expected-to-fail-p
   (sb-impl::featurep fails-on))
 
 (defun broken-p (broken-on)
