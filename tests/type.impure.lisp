@@ -13,6 +13,7 @@
 (use-package "ASSERTOID")
 (use-package "TEST-UTIL")
 
+;; TODO unify with stuff in type.pure.lisp
 (defmacro assert-nil-nil (expr)
   `(assert (equal '(nil nil) (multiple-value-list ,expr))))
 (defmacro assert-nil-t (expr)
@@ -1006,9 +1007,9 @@
     (eval `(progn (defclass ,class () ())
                   (lambda (x) (typep x ',class))
                   (setf (find-class ',class) nil)))
-    (let ((fun (checked-compile `(lambda (x) (typep x ',class))
-                                :allow-style-warnings t)))
-      (assert-error (funcall fun 10))
-      (assert (handler-case (not (sb-kernel:specifier-type class))
-                (sb-kernel:parse-unknown-type ()
-                  t))))))
+    (checked-compile-and-assert (:allow-style-warnings t)
+        `(lambda (x) (typep x ',class))
+      ((10) (condition '(or error sb-kernel:parse-unknown-type))))
+    (assert (handler-case (not (sb-kernel:specifier-type class))
+              (sb-kernel:parse-unknown-type ()
+                t)))))
