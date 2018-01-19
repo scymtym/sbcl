@@ -7,9 +7,8 @@
   :in-order-to ((test-op (test-op "sb-sprof/tests"))))
 
 (defsystem "sb-sprof/tests"
-  :depends-on ("sb-sprof")
-  :components ((:file "test"))
+  :depends-on ("sb-sprof" "sb-test")
+  ; :components ((:file "test"))
   :perform (test-op (o c)
              #-(or win32 darwin) ;not yet
-             (or (funcall (find-symbol "RUN-TESTS" "SB-SPROF-TEST"))
-                 (error "test-op failed"))))
+             (uiop:symbol-call '#:run-tests '#:run-all)))
