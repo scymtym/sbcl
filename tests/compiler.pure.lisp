@@ -227,6 +227,7 @@
                           (declare (type (0) x))
                           x)
                        :allow-warnings t)
+    (declare (ignore fun))
     (assert failure-p)))
 
 (with-test (:name (compile make-array :bad-type-specifier :bug-181))
@@ -235,17 +236,19 @@
                           (declare (ignore x))
                           (make-array 1 :element-type '(0)))
                        :allow-warnings t)
-    (declare (ignore failure-p warnings))
-    ;; FIXME (assert (= 1 (length warnings)))
+    (declare (ignore failure-p))
+    (assert (= 1 (length warnings)))
     (assert-error (funcall fun 1))))
 
 ;;; the following functions must not be flushable
-(dolist (form '((make-sequence 'fixnum 10)
-                (concatenate 'fixnum nil)
-                (map 'fixnum #'identity nil)
-                (merge 'fixnum nil nil #'<)))
-  (assert (not (eval `(locally (declare (optimize (safety 0)))
-                        (ignore-errors (progn ,form t)))))))
+(with-test (:name (make-sequence concatenate map merge :not-flushable))
+  (dolist (form '((make-sequence 'fixnum 10)
+                  (concatenate 'fixnum nil)
+                  (map 'fixnum #'identity nil)
+                  (merge 'fixnum nil nil #'<)))
+    (checked-compile-and-assert (:allow-warnings t :allow-style-warnings t)
+        `(lambda () (progn ,form t))
+      (() (condition 'error)))))
 
 (dolist (form '((values-list (car (list '(1 . 2))))
                 (fboundp '(set bet))
@@ -4507,22 +4510,23 @@
     (assert (every #'plusp (funcall f #'list)))))
 
 (with-test (:name (eval :malformed-ignore :lp-1000239)
-            :skipped-on :interpreter)
-  (assert-error
-   (eval '(lambda () (declare (ignore (function . a)))))
-   sb-int:simple-program-error)
-  (assert-error
-   (eval '(lambda () (declare (ignore (function a b)))))
-   sb-int:simple-program-error)
-  (assert-error
-   (eval '(lambda () (declare (ignore (function)))))
-   sb-int:simple-program-error)
-  (assert-error
-   (eval '(lambda () (declare (ignore (a)))))
-   sb-int:simple-program-error)
-  (assert-error
-   (eval '(lambda () (declare (ignorable (a b)))))
-   sb-int:simple-program-error))
+                  :skipped-on :interpreter)
+  (let ((*error-output* (make-broadcast-stream)))
+    (assert-error
+     (eval '(lambda () (declare (ignore (function . a)))))
+     sb-int:simple-program-error)
+    (assert-error
+     (eval '(lambda () (declare (ignore (function a b)))))
+     sb-int:simple-program-error)
+    (assert-error
+     (eval '(lambda () (declare (ignore (function)))))
+     sb-int:simple-program-error)
+    (assert-error
+     (eval '(lambda () (declare (ignore (a)))))
+     sb-int:simple-program-error)
+    (assert-error
+     (eval '(lambda () (declare (ignorable (a b)))))
+     sb-int:simple-program-error)))
 
 (with-test (:name (compile :malformed-type-declaraions))
   (assert (nth-value 1
@@ -5176,7 +5180,10 @@
                            (array-dimension a 2)))))))))
     (assert (= 1 (length notes)))))
 
-(assert-error (upgraded-array-element-type 'an-undefined-type))
+(with-test (:name (upgraded-array-element-type :undefined-type))
+  (checked-compile-and-assert (:allow-style-warnings t :optimize nil)
+      '(lambda () (upgraded-array-element-type 'an-undefined-type))
+    (() (condition '(or sb-kernel:parse-unknown-type error)))))
 
 (with-test (:name :xchg-misencoding)
   (checked-compile-and-assert ()
