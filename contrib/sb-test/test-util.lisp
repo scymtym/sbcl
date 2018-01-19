@@ -70,7 +70,7 @@
             #-win32
             (ignore-errors (sb-thread:terminate-thread thread))))
         (when any-leftover
-          (fail-test (leftover-threads *test-file* name start-time (list any-leftover)))
+          (fail-test (leftover-threads *test-file* name start-time (list (princ-to-string any-leftover)))) ; TODO only for impure
           (return-from run-test)))
       (if (expected-failure-p fails-on)
           (fail-test (unexpected-success *test-file* name start-time))

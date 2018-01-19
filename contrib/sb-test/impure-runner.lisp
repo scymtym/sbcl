@@ -12,8 +12,15 @@
     (setf *test-evaluator-mode* :interpret)
     (push :interpreter *features*))
   (setf sb-ext:*evaluator-mode* *test-evaluator-mode*)
-  (format t "// Running ~a in ~a evaluator mode~%"
-          (enough-namestring file) *evaluator-mode*)
+
+  (format *standard-output* "Pure test ")
+  (test-util::with-colored-output (*standard-output* :magenta :bold t)
+    (write-string (enough-namestring file) *standard-output*))
+  (format *standard-output* ", ")
+  (test-util::with-colored-output (*standard-output* :white :bold t)
+    (princ *test-evaluator-mode* *standard-output*))
+  (format *standard-output* " evaluator mode~%")
+
   (restart-case
       (handler-bind
           ((error (lambda (condition)
