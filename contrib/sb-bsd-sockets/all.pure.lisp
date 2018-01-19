@@ -1,56 +1,38 @@
-(defpackage "SB-BSD-SOCKETS-TEST"
-  (:use "CL" "SB-BSD-SOCKETS" "SB-RT"))
+(cl:defpackage "SB-BSD-SOCKETS-TEST"
+  (:use "CL" "SB-BSD-SOCKETS" "TEST-UTIL"))
 
-(in-package :sb-bsd-sockets-test)
-
-(defmacro deftest* ((name &key fails-on) form &rest results)
-  `(progn
-     (when (sb-impl::featurep ',fails-on)
-       (pushnew ',name sb-rt::*expected-failures*))
-     (deftest ,name ,form ,@results)))
+(cl:in-package "SB-BSD-SOCKETS-TEST")
 
 ;;; a real address
-(deftest make-inet-address
-  (equalp (make-inet-address "127.0.0.1")  #(127 0 0 1))
-  t)
+(with-test (:name make-inet-address)
+  (assert (equalp (make-inet-address "127.0.0.1")  #(127 0 0 1))))
+
 ;;; and an address with bit 8 set on some octets
-(deftest make-inet-address2
-  (equalp (make-inet-address "242.1.211.3")  #(242 1 211 3))
-  t)
+(with-test (:name make-inet-address2)
+  (assert (equalp (make-inet-address "242.1.211.3")  #(242 1 211 3))))
 
-#-win32
-(deftest make-inet6-address.1
-    (equalp (make-inet6-address "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")
-            #(255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 255))
-  t)
+(with-test (:name make-inet6-address.1 :skipped-on :win32)
+  (assert (equalp (make-inet6-address "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")
+                  #(255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 255))))
 
-#-win32
-(deftest unparse-inet6-address
-    (string= (sb-bsd-sockets::unparse-inet6-address
-              (make-inet6-address "fe80::abcd:1234"))
-             "fe80::abcd:1234")
-  t)
+(with-test (:name unparse-inet6-address :skipped-on :win32)
+  (assert (string= (sb-bsd-sockets::unparse-inet6-address
+                    (make-inet6-address "fe80::abcd:1234"))
+                   "fe80::abcd:1234")))
 
-(deftest get-protocol-by-name/tcp
-    (integerp (get-protocol-by-name "tcp"))
-  t)
+(with-test (:name get-protocol-by-name/tcp)
+  (assert (integerp (get-protocol-by-name "tcp"))))
 
-(deftest get-protocol-by-name/udp
-  (integerp (get-protocol-by-name "udp"))
-  t)
+(with-test (:name get-protocol-by-name/udp)
+  (assert (integerp (get-protocol-by-name "udp"))))
 
 ;;; See https://bugs.launchpad.net/sbcl/+bug/659857
 ;;; Apparently getprotobyname_r on FreeBSD says -1 and EINTR
 ;;; for unknown protocols...
-#-(and freebsd sb-thread)
-#-(and dragonfly sb-thread)
-(deftest get-protocol-by-name/error
-  (handler-case (get-protocol-by-name "nonexistent-protocol")
-    (unknown-protocol ()
-      t)
-    (:no-error ()
-      nil))
-  t)
+(with-test (:name get-protocol-by-name/error
+                  :skipped-on (or (and :freebsd :sb-thread)
+                                  (and :dragonfly :sb-thread)))
+  (assert-error (get-protocol-by-name "nonexistent-protocol") unknown-protocol))
 
 (when (handler-case (make-instance 'inet-socket
                                    :type :stream
@@ -59,22 +41,17 @@
         (:no-error (x) x))
   (push :ipv4-support *features*))
 
-#+ipv4-support
-(deftest make-inet-socket.smoke
+(with-test (:name make-inet-socket.smoke :skipped-on (not :ipv4-support))
   ;; make a socket
   (let ((s (make-instance 'inet-socket :type :stream :protocol (get-protocol-by-name "tcp"))))
-    (> (socket-file-descriptor s) 1))
-  t)
+    (assert (> (socket-file-descriptor s) 1))))
 
-#+ipv4-support
-(deftest make-inet-socket.keyword
-    ;; make a socket
-    (let ((s (make-instance 'inet-socket :type :stream :protocol :tcp)))
-      (> (socket-file-descriptor s) 1))
-  t)
+(with-test (:name make-inet-socket.keyword :skipped-on (not :ipv4-support))
+  ;; make a socket
+  (let ((s (make-instance 'inet-socket :type :stream :protocol :tcp)))
+    (assert (> (socket-file-descriptor s) 1))))
 
-#+ipv4-support
-(deftest* (make-inet-socket-wrong)
+(with-test (:name make-inet-socket-wrong :skipped-on (not :ipv4-support))
     ;; fail to make a socket: check correct error return.  There's no nice
     ;; way to check the condition stuff on its own, which is a shame
     (handler-case
@@ -91,8 +68,7 @@
       (:no-error nil))
   t)
 
-#+ipv4-support
-(deftest* (make-inet-socket-keyword-wrong)
+(with-test (:name make-inet-socket-keyword-wrong :skipped-on (not :ipv4-support))
     ;; same again with keywords
     (handler-case
         (make-instance 'inet-socket :type :stream :protocol :udp)
@@ -109,31 +85,26 @@
       (:no-error nil))
   t)
 
-#-win32
-(deftest make-inet6-socket.smoke
+(with-test (:name make-inet6-socket.smoke :skipped-on :win32)
   (handler-case
       (let ((s (make-instance 'inet6-socket :type :stream :protocol (get-protocol-by-name "tcp"))))
         (> (socket-file-descriptor s) 1))
     ((or address-family-not-supported protocol-not-supported-error) () t))
   t)
 
-#-win32
-(deftest make-inet6-socket.keyword
+(with-test (:name make-inet6-socket.keyword :skipped-on :win32)
   (handler-case
       (let ((s (make-instance 'inet6-socket :type :stream :protocol :tcp)))
         (> (socket-file-descriptor s) 1))
     ((or address-family-not-supported protocol-not-supported-error) () t))
   t)
 
-#+ipv4-support
-(deftest* (non-block-socket)
+(with-test (:name non-block-socket :skipped-on (not :ipv4-support))
   (let ((s (make-instance 'inet-socket :type :stream :protocol :tcp)))
     (setf (non-blocking-mode s) t)
-    (non-blocking-mode s))
-  t)
+    (assert (non-blocking-mode s))))
 
-#+ipv4-support
-(deftest inet-socket-bind
+(with-test (:name inet-socket-bind :skipped-on (not :ipv4-support))
   (let* ((tcp (get-protocol-by-name "tcp"))
          (address (make-inet-address "127.0.0.1"))
          (s1 (make-instance 'inet-socket :type :stream :protocol tcp))
@@ -153,8 +124,7 @@
       (socket-close s2)))
   t)
 
-#-win32
-(deftest inet6-socket-bind
+(with-test (:name inet6-socket-bind :skipped-on :win32)
   (handler-case
       (let* ((tcp (get-protocol-by-name "tcp"))
              (address (make-inet6-address "::1"))
@@ -182,14 +152,13 @@
     ((or address-family-not-supported protocol-not-supported-error) () t))
   t)
 
-#+ipv4-support
-(deftest* (simple-sockopt-test)
+
+(with-test (:name simple-sockopt-test :skipped-on :ipv4-support)
   ;; test we can set SO_REUSEADDR on a socket and retrieve it, and in
   ;; the process that all the weird macros in sockopt happened right.
   (let ((s (make-instance 'inet-socket :type :stream :protocol (get-protocol-by-name "tcp"))))
     (setf (sockopt-reuse-address s) t)
-    (sockopt-reuse-address s))
-  t)
+    (assert (sockopt-reuse-address s))))
 
 (defun read-buf-nonblock (buffer stream)
   "Like READ-SEQUENCE, but returns early if the full quantity of data isn't there to be read.  Blocks if no input at all"
@@ -200,26 +169,21 @@
         ((or (>= i (length buffer)) (not c) (eq c eof)) i)
       (setf (elt buffer i) c))))
 
-#+internet-available
-(deftest name-service-return-type
-  (vectorp (host-ent-address (get-host-by-address #(127 0 0 1))))
-  t)
+(with-test (:name name-service-return-type :skipped-on (not :internet-available))
+  (assert (vectorp (host-ent-address (get-host-by-address #(127 0 0 1))))))
 
 ;;; these require that the echo services are turned on in inetd
-#+internet-available
-(deftest simple-tcp-client
-    (let ((s (make-instance 'inet-socket :type :stream :protocol :tcp))
-          (data (make-string 200)))
-      (socket-connect s #(127 0 0 1) 7)
-      (let ((stream (socket-make-stream s :input t :output t :buffering :none)))
-        (format stream "here is some text")
-        (let ((data (subseq data 0 (read-buf-nonblock data stream))))
-          (format t "~&Got ~S back from TCP echo server~%" data)
-          (> (length data) 0))))
-  t)
+(with-test (:name simple-tcp-client :skipped-on (not :internet-available))
+  (let ((s (make-instance 'inet-socket :type :stream :protocol :tcp))
+        (data (make-string 200)))
+    (socket-connect s #(127 0 0 1) 7)
+    (let ((stream (socket-make-stream s :input t :output t :buffering :none)))
+      (format stream "here is some text")
+      (let ((data (subseq data 0 (read-buf-nonblock data stream))))
+        (format t "~&Got ~S back from TCP echo server~%" data)
+        (assert (> (length data) 0))))))
 
-#+internet-available
-(deftest sockaddr-return-type
+(with-test (:name sockaddr-return-type :skipped-on (not :internet-available))
   (let ((s (make-instance 'inet-socket :type :stream :protocol :tcp)))
     (unwind-protect
          (progn
@@ -230,8 +194,7 @@
       (socket-close s)))
   t)
 
-#+internet-available
-(deftest simple-udp-client
+(with-test (:name simple-udp-client :skipped-on (not :internet-available))
   (let ((s (make-instance 'inet-socket :type :datagram :protocol (get-protocol-by-name "udp")))
         (data (make-string 200)))
     (format t "Socket type is ~A~%" (sockopt-type s))
@@ -248,8 +211,7 @@
 ;;; to look at /etc/syslog.conf or local equivalent to find out where
 ;;; the message ended up
 
-#-win32
-(deftest simple-local-client
+(with-test (:name simple-local-client :skipped-on :win32)
     (progn
       ;; SunOS (Solaris) and Darwin systems don't have a socket at
       ;; /dev/log.  We might also be building in a chroot or
@@ -282,33 +244,31 @@
 
 ;;; these require that the internet (or bits of it, at least) is available
 
-#+internet-available
-(deftest get-host-by-name.v4
-  (equalp (car (host-ent-addresses (get-host-by-name "a.root-servers.net")))
-          #(198 41 0 4))
-  t)
+(with-test (:name get-host-by-name.v4 :skipped-on (not :internet-available))
+  (assert (equalp (car (host-ent-addresses
+                        (get-host-by-name "a.root-servers.net")))
+                  #(198 41 0 4))))
 
-#+internet-available
-(deftest get-host-by-name.v6
-  (equalp (car (host-ent-addresses (nth-value 1 (get-host-by-name "a.root-servers.net"))))
-          #(32 1 5 3 186 62 0 0 0 0 0 0 0 2 0 48))
-  t)
+(with-test (:name get-host-by-name.v6 :skipped-on (not :internet-available))
+  (assert (equalp (car (host-ent-addresses
+                        (nth-value 1 (get-host-by-name "a.root-servers.net"))))
+                  #(32 1 5 3 186 62 0 0 0 0 0 0 0 2 0 48))))
 
-#+internet-available
-(deftest get-host-by-address.v4
-    (host-ent-name (get-host-by-address #(198 41 0 4)))
-  "a.root-servers.net")
+(with-test (:name get-host-by-address.v4 :skipped-on (not :internet-available))
+  (assert (equal (host-ent-name (get-host-by-address #(198 41 0 4)))
+                 "a.root-servers.net")))
 
-#+internet-available
-(deftest get-host-by-address.v6
-    (host-ent-name (get-host-by-address #(32 1 5 3 186 62 0 0 0 0 0 0 0 2 0 48)))
-  "a.root-servers.net")
+(with-test (:name get-host-by-address.v6 :skipped-on (not :internet-available))
+  (assert (equal (host-ent-name
+                  (get-host-by-address
+                   #(32 1 5 3 186 62 0 0 0 0 0 0 0 2 0 48)))
+                 "a.root-servers.net")))
 
 ;;; These days lots of people seem to be using DNS servers that don't
 ;;; report resolving failures for non-existing domains. This test
 ;;; will fail there, so we've disabled it.
 #+nil
-(deftest get-host-by-name-wrong
+(with-test (:name get-host-by-name-wrong)
   (handler-case
    (get-host-by-name "foo.tninkpad.telent.net.")
    (NAME-SERVICE-ERROR () t)
@@ -323,8 +283,7 @@
       (format stream "~A HTTP/1.0~%~%" request))
     s))
 
-#+internet-available
-(deftest simple-http-client-1
+(with-test (:name simple-http-client-1 :skipped-on (not :internet-available))
     (handler-case
         (let ((s (http-stream "ww.telent.net" 80 "HEAD /")))
           (let ((data (make-string 200)))
@@ -336,9 +295,7 @@
       (network-unreachable-error () 'network-unreachable))
   t)
 
-
-#+internet-available
-(deftest sockopt-receive-buffer
+(with-test (:name sockopt-receive-buffer :skipped-on (not :internet-available))
     ;; on Linux x86, the receive buffer size appears to be doubled in the
     ;; kernel: we set a size of x and then getsockopt() returns 2x.
     ;; This is why we compare with >= instead of =
@@ -354,25 +311,24 @@
       (network-unreachable-error () 'network-unreachable))
   t)
 
-#+ipv4-support
-(deftest socket-open-p-true.1
+(with-test (:name socket-open-p-true.1 :skipped-on (not :ipv4-support))
     (socket-open-p (make-instance 'inet-socket :type :stream :protocol :tcp))
-  t)
-#+(and ipv4-support internet-available)
-(deftest socket-open-p-true.2
+    t)
+
+(with-test (:name socket-open-p-true.2
+                  :skipped-on (not (and :ipv4-support :internet-available)))
     (let ((s (make-instance 'inet-socket :type :stream :protocol :tcp)))
       (unwind-protect
            (progn
              (socket-connect s #(127 0 0 1) 7)
              (socket-open-p s))
         (socket-close s)))
-  t)
-#+ipv4-support
-(deftest socket-open-p-false
-    (let ((s (make-instance 'inet-socket :type :stream :protocol :tcp)))
-      (socket-close s)
-      (socket-open-p s))
-  nil)
+    t)
+
+(with-test (:name socket-open-p-false :skipped-on (not :ipv4-support))
+  (let ((s (make-instance 'inet-socket :type :stream :protocol :tcp)))
+    (socket-close s)
+    (assert (not (socket-open-p s)))))
 
 ;;; we don't have an automatic test for some of this yet.  There's no
 ;;; simple way to run servers and have something automatically connect
@@ -394,8 +350,8 @@
        (format t "Received ~A bytes from ~A:~A - ~A ~%"
                len address port (subseq buf 0 (min 10 len)))))))
 
-#+(and ipv4-support sb-thread)
-(deftest interrupt-io
+(with-test (:name interrupt-io
+                  :skipped-on (not (and :ipv4-support :sb-thread)))
     (let (result)
       (labels
           ((client (port)
@@ -474,10 +430,9 @@
 ;; translates into an END-OF-FILE on the other end, no matter which
 ;; end performs the shutdown and independent of the element-type of
 ;; the stream.
-#+ipv4-support
 (macrolet
     ((define-shutdown-test (name who-shuts-down who-reads element-type direction)
-       `(deftest ,name
+       `(with-test (:name ,name :skipped-on (not :ipv4-support))
           (let ((address (make-inet-address "127.0.0.1")))
             (with-client-and-server
                 ((inet-socket :protocol :tcp :type :stream)
@@ -517,8 +472,7 @@
   (let ((base (expt 36 8)))
     (format nil "~36R" (+ base (random base (make-random-state t))))))
 
-#+linux
-(deftest abstract.smoke
+(with-test (:name abstract.smoke :skipped-on (not :linux))
     (let* ((address (poor-persons-random-address))
            (message "message")
            (buffer (make-string (length message))))
@@ -530,8 +484,7 @@
         (string= (socket-receive server buffer nil) message)))
   t)
 
-#+linux
-(deftest abstract.socket-peername
+(with-test (:name abstract.socket-peername :skipped-on (not :linux))
     (let ((address (poor-persons-random-address)))
       (with-client-and-server ((local-abstract-socket :type :stream)
                                (listener address)
