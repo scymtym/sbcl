@@ -322,7 +322,30 @@ STRING (or the subsequence bounded by START and END)."
                                  (use-value ,cname c))))
       ,@body))))
 
-(push
+(defun add-replacements-to-character-coding (character-coding replacement)
+  (wrap-character-coding-functions
+   character-coding
+   (lambda (function)
+     (declare (type (or null function) function))
+     (when function
+       (lambda (&rest rest)
+         (declare (dynamic-extent rest))
+         (handler-bind
+             ((stream-decoding-error
+               (lambda (c)
+                 (declare (ignore c))
+                 (invoke-restart 'input-replacement replacement)))
+              (stream-encoding-error
+               (lambda (c)
+                 (declare (ignore c))
+                 (invoke-restart 'output-replacement replacement)))
+              (octets-encoding-error
+               (lambda (c) (use-value replacement c)))
+              (octet-decoding-error
+               (lambda (c) (use-value replacement c))))
+           (apply function rest)))))))
+
+(push ; TODO does this still do anything?
   `("SB-IMPL"
     char-class char-class2 char-class3
     ,@(let (macros)
