@@ -786,7 +786,7 @@
 ;;; number of bytes per element.
 (defun pick-output-routine (type buffering &optional external-format)
   (when (subtypep type 'character)
-    (let ((entry (get-external-format-or-lose external-format)))
+    (let ((entry (find-external-format external-format)))
       (return-from pick-output-routine
         (values (ecase buffering
                   (:none (ef-write-char-none-buffered-fun entry))
@@ -1132,7 +1132,7 @@
 ;;; bytes per element (and for character types string input routine).
 (defun pick-input-routine (type &optional external-format)
   (when (subtypep type 'character)
-    (let ((entry (get-external-format-or-lose external-format)))
+    (let ((entry (find-external-format external-format)))
       (return-from pick-input-routine
         (values (ef-read-char-fun entry)
                 'character
@@ -1227,12 +1227,14 @@
             ))))
 
 (defun fd-stream-resync (stream)
-  (let ((entry (get-external-format (fd-stream-external-format stream))))
+  (let ((entry (find-external-format (fd-stream-external-format stream)
+                                     :if-does-not-exist nil)))
     (when entry
       (funcall (ef-resync-fun entry) stream))))
 
 (defun get-fd-stream-character-sizer (stream)
-  (let ((entry (get-external-format (fd-stream-external-format stream))))
+  (let ((entry (find-external-format (fd-stream-external-format stream)
+                                     :if-does-not-exist nil)))
     (when entry
       (ef-bytes-for-char-fun entry))))
 
@@ -1244,10 +1246,6 @@
   (let ((sizer (get-fd-stream-character-sizer stream)))
     (when sizer
       (loop for char across string summing (funcall sizer char)))))
-
-(defun find-external-format (external-format)
-  (when external-format
-    (get-external-format external-format)))
 
 (defun variable-width-external-format-p (ef-entry)
   (and ef-entry (not (null (ef-resync-fun ef-entry)))))
@@ -2518,7 +2516,7 @@
                          :ucs-2)
                         (t
                          (default-external-format))))
-         (ef (get-external-format keyword))
+         (ef (find-external-format keyword))
          (replacement (ef-default-replacement-character ef)))
     `(,keyword :replacement ,replacement)))
 

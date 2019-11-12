@@ -967,6 +967,7 @@ like *STACK-TOP-HINT* and unsupported stuff like *TRACED-FUN-LIST*."
                "NATIVE-NAMESTRING"
 
                ;; external-format support
+               "FIND-EXTERNAL-FORMAT"
                "OCTETS-TO-STRING" "STRING-TO-OCTETS"
 
                ;; Whether to use the interpreter or the compiler for EVAL

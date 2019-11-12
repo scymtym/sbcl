@@ -2029,6 +2029,23 @@ the restart does not exist."))
            :external-format external-format
            :octets (sap-ref-octets sap offset count))))
 
+(defun replacement-handlerify-function (fun replacement)
+  (lambda (&rest rest)
+    (declare (dynamic-extent rest))
+    (handler-bind
+        ((stream-decoding-error
+           (lambda (condition)
+             (declare (ignore condition))
+             (invoke-restart 'input-replacement replacement)))
+         (stream-encoding-error
+           (lambda (condition)
+             (declare (ignore condition))
+             (invoke-restart 'output-replacement replacement)))
+         ((or octets-encoding-error octet-decoding-error)
+           (lambda (condition)
+             (use-value replacement condition))))
+      (apply fun rest))))
+
 (define-condition control-stack-exhausted (storage-condition)
   ()
   (:report

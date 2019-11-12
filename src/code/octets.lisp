@@ -228,54 +228,13 @@
 
 ;;;; external formats
 
-(defvar *default-external-format* nil)
-
-(defun default-external-format ()
-  (or *default-external-format*
-      ;; On non-unicode, use iso-8859-1 instead of detecting it from
-      ;; the locale settings. Defaulting to an external-format which
-      ;; can represent characters that the CHARACTER type can't
-      ;; doesn't seem very sensible.
-      #-sb-unicode
-      (setf *default-external-format* :latin-1)
-      (let ((external-format #-win32 (intern (or #-android
-                                                  (alien-funcall
-                                                   (extern-alien
-                                                    "nl_langinfo"
-                                                    (function (c-string :external-format :latin-1)
-                                                              int))
-                                                   sb-unix:codeset)
-                                                  "LATIN-1")
-                                              *keyword-package*)
-                             #+win32 (sb-win32::ansi-codepage)))
-        (let ((entry (get-external-format external-format)))
-          (cond
-            (entry
-             (/show0 "matched"))
-            (t
-             ;; FIXME! This WARN would try to do printing
-             ;; before the streams have been initialized,
-             ;; causing an infinite erroring loop. We should
-             ;; either print it by calling to C, or delay the
-             ;; warning until later. Since we're in freeze
-             ;; right now, and the warning isn't really
-             ;; essential, I'm doing what's least likely to
-             ;; cause damage, and commenting it out. This
-             ;; should be revisited after 0.9.17. -- JES,
-             ;; 2006-09-21
-             #+nil
-             (warn "Invalid external-format ~A; using LATIN-1"
-                   external-format)
-             (setf external-format :latin-1))))
-        (/show0 "/default external format ok")
-        (setf *default-external-format* external-format))))
 
 ;;;; public interface
 
 (defun maybe-defaulted-external-format (external-format)
-  (get-external-format-or-lose (if (eq external-format :default)
-                                   (default-external-format)
-                                   external-format)))
+  (find-external-format (if (eq external-format :default)
+                            (default-external-format)
+                            external-format)))
 
 (declaim (ftype (sfunction ((vector (unsigned-byte 8)) &key (:external-format t)
                                    (:start index)
@@ -362,43 +321,6 @@ STRING (or the subsequence bounded by START and END)."
         ((octet-decoding-error (lambda (c)
                                  (use-value ,cname c))))
       ,@body))))
-
-;;; This function was moved from 'fd-stream' because it depends on
-;;; the various error classes, two of which are defined just above.
-(defun get-external-format (external-format)
-  (flet ((keyword-external-format (keyword)
-           (declare (type keyword keyword))
-           (gethash keyword *external-formats*))
-         (replacement-handlerify (entry replacement)
-           (when entry
-             (wrap-external-format-functions
-              entry
-              (lambda (fun)
-                (and fun
-                     (lambda (&rest rest)
-                       (declare (dynamic-extent rest))
-                       (handler-bind
-                           ((stream-decoding-error
-                             (lambda (c)
-                               (declare (ignore c))
-                               (invoke-restart 'input-replacement replacement)))
-                            (stream-encoding-error
-                             (lambda (c)
-                               (declare (ignore c))
-                               (invoke-restart 'output-replacement replacement)))
-                            (octets-encoding-error
-                             (lambda (c) (use-value replacement c)))
-                            (octet-decoding-error
-                             (lambda (c) (use-value replacement c))))
-                         (apply fun rest)))))))))
-    (typecase external-format
-      (keyword (keyword-external-format external-format))
-      ((cons keyword)
-       (let ((entry (keyword-external-format (car external-format)))
-             (replacement (getf (cdr external-format) :replacement)))
-         (if replacement
-             (replacement-handlerify entry replacement)
-             entry))))))
 
 (push
   `("SB-IMPL"

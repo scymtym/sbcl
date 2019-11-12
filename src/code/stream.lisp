@@ -191,7 +191,7 @@
 
 ;;;; for file position and file length
 (defun external-format-char-size (external-format)
-  (ef-char-size (get-external-format external-format)))
+  (ef-char-size (find-external-format external-format)))
 
 ;;; Call the MISC method with the :FILE-POSITION operation.
 #-sb-fluid (declaim (inline ansi-stream-file-position))
