@@ -213,9 +213,13 @@
             (- +ansi-stream-in-buffer-length+
                (ansi-stream-in-index stream)))
          #+sb-unicode
-         (let ((char-size (if (fd-stream-p stream)
-                              (fd-stream-char-size stream)
-                              (external-format-char-size (stream-external-format stream)))))
+         (let ((char-size (cond ((fd-stream-p stream)
+                                 (fd-stream-char-size stream))
+                                ((let ((ef (stream-external-format stream)))
+                                   (when ef
+                                     (external-format-char-size ef))))
+                                (t
+                                 1))))
            (- res
               (etypecase char-size
                 (function

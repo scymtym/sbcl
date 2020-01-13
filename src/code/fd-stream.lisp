@@ -609,13 +609,9 @@
        ;; FIXME: Why this here? Doesn't seem necessary.
        ,(unless (eq (car buffering) :none)
           `(synchronize-stream-output ,stream-var))
-       ,(if restart
-            `(block output-nothing
-               ,@body
-               (setf (buffer-tail obuf) (+ tail ,size)))
-            `(progn
-               ,@body
-               (setf (buffer-tail obuf) (+ tail ,size))))
+       (,@(if restart '(block output-nothing) '(progn))
+        ,@body
+        (setf (buffer-tail obuf) (+ tail ,size)))
        ,(ecase (car buffering)
           (:none
            `(flush-output-buffer ,stream-var))
@@ -1250,7 +1246,7 @@
 (defun variable-width-external-format-p (ef-entry)
   (and ef-entry (not (null (ef-resync-fun ef-entry)))))
 
-(defun bytes-for-char-fun (ef-entry)
+(defun bytes-for-char-fun (ef-entry) ; TODO why does this accept nil?
   (if ef-entry (ef-bytes-for-char-fun ef-entry) (constantly 1)))
 
 (defmacro define-external-format/unibyte-mapping
