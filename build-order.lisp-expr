@@ -779,6 +779,7 @@
   "src/pcl/fsc"
   "src/pcl/methods"
   "src/pcl/fixup"
+  "src/pcl/cnm"
   "src/pcl/defcombin"
   "src/pcl/ctypes"
   "src/pcl/env"
