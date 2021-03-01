@@ -1910,7 +1910,9 @@
                      (setf some-plusp t))
                     ((or (and (eq function '-) non-negative-p)
                          (and (eq function '+) non-positive-p))
-                     (setf some-minusp t))))
+                     (setf some-minusp t))
+                    (t ; Can't tell direction
+                     (setf some-plusp t some-minusp t))))
             ;; Ultimately, the derived types of the sets must match
             ;; INITIAL-TYPE if we are going to derive new bounds.
             (unless (and (numeric-type-p set-type)
