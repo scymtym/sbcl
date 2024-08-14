@@ -1685,6 +1685,23 @@
     ((0 1) :bad)
     ((1 1) :bad)))
 
+(with-test (:name (:infer-iteration-var-type :argument-order))
+  (flet ((check-one (step-form expected-type)
+           (let ((f (checked-compile
+                     `(lambda (x)
+                        (declare (optimize speed)
+                                 (type (single-float (0.0f0)) x))
+                        (let ((y 0.0f0))
+                          (dotimes (i 5 y)
+                            (setq y ,step-form)))))))
+             (assert (equal (sb-impl::%simple-fun-type f)
+                            `(function ((single-float (0.0f0)))
+                                       (values ,expected-type &optional)))))))
+    (check-one '(+ y x) '(single-float 0.0f0))
+    (check-one '(+ x y) '(single-float 0.0f0))
+    (check-one '(- y x) '(single-float * 0.0f0))
+    (check-one '(- x y) '(or float (complex single-float) (complex double-float)))))
+
 (with-test (:name :delay-transform-until-constraint-loop)
   (checked-compile-and-assert
       ()

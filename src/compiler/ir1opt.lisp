@@ -2024,6 +2024,22 @@
          (when (memq source-name '(- +))
            source-name))))
 
+(defun %inc-or-dec-delta (iteration-variable use function)
+  ;; ITERATION-VARIABLE must be one of two arguments. The other
+  ;; argument is the delta.
+  (let ((args (basic-combination-args use)))
+    (flet ((arg-is-iteration-variable-p (arg)
+             (let ((arg-use (principal-lvar-use arg)))
+               (and (ref-p arg-use)
+                    (eq (ref-leaf arg-use) iteration-variable)))))
+      (cond ((not (proper-list-of-length-p args 2 2))
+             nil)
+            ((arg-is-iteration-variable-p (first args))
+             (values (second args)))
+            ((and (eq function '+)
+                  (arg-is-iteration-variable-p (second args)))
+             (values (first args)))))))
+
 (defun %analyze-set-uses (sets var initial-type)
   (let ((some-plusp nil)
         (some-minusp nil)
@@ -2034,14 +2050,12 @@
              (function (%inc-or-dec-p set-use)))
         (unless function ; every use must be + or -
           (return-from %analyze-set-uses nil))
-        (let ((args (basic-combination-args set-use)))
-          ;; Every use must be of the form ({+,-} VAR STEP).
-          (unless (and (proper-list-of-length-p args 2 2)
-                       (let ((first (principal-lvar-use (first args))))
-                         (and (ref-p first)
-                              (eq (ref-leaf first) var))))
+        ;; Every use must be of the form ({+,-} VAR DELTA) or
+        ;; (+ DELTA VAR).
+        (let ((delta (%inc-or-dec-delta var set-use function)))
+          (unless delta
             (return-from %analyze-set-uses nil))
-          (let ((step-type (weaken-numeric-union-type (lvar-type (second args))))
+          (let ((step-type (weaken-numeric-union-type (lvar-type delta)))
                 (set-type (weaken-numeric-union-type (lvar-type (set-value set)))))
             ;; In ({+,-} VAR STEP), the type of STEP must be a numeric
             ;; type matching INITIAL-TYPE.
